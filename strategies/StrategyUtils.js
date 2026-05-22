@@ -1,0 +1,70 @@
+// StrategyUtils.js
+export function calculateEMA(data, period) {
+    if (!data || data.length < period) return [];
+    const k = 2 / (period + 1);
+    const ema = new Array(data.length).fill(0);
+
+    // SMA for the first valid EMA value
+    let sum = 0;
+    for (let i = 0; i < period; i++) {
+        sum += data[i];
+    }
+    ema[period - 1] = sum / period;
+
+    for (let i = period; i < data.length; i++) {
+        ema[i] = (data[i] * k) + (ema[i - 1] * (1 - k));
+    }
+    return ema;
+}
+
+export function calculateRSI(closes, period = 14) {
+    if (!closes || closes.length < period + 1) return new Array(closes.length).fill(50);
+    const rsi = new Array(closes.length).fill(50);
+    let avgGain = 0;
+    let avgLoss = 0;
+
+    // Initial average gain and loss
+    for (let i = 1; i <= period; i++) {
+        const change = closes[i] - closes[i - 1];
+        if (change > 0) avgGain += change;
+        else avgLoss += Math.abs(change);
+    }
+    avgGain /= period;
+    avgLoss /= period;
+
+    rsi[period] = avgLoss === 0 ? 100 : 100 - (100 / (1 + (avgGain / avgLoss)));
+
+    // Wilder's Smoothing
+    for (let i = period + 1; i < closes.length; i++) {
+        const change = closes[i] - closes[i - 1];
+        const gain = change > 0 ? change : 0;
+        const loss = change < 0 ? Math.abs(change) : 0;
+
+        avgGain = ((avgGain * (period - 1)) + gain) / period;
+        avgLoss = ((avgLoss * (period - 1)) + loss) / period;
+
+        if (avgLoss === 0) {
+            rsi[i] = 100;
+        } else {
+            rsi[i] = 100 - (100 / (1 + (avgGain / avgLoss)));
+        }
+    }
+    return rsi;
+}
+
+export function formatPair(pair) {
+    if (!pair) return '';
+    if (pair.startsWith('B-')) return pair;
+
+    let formatted = pair;
+    if (!formatted.includes('_')) {
+        if (formatted.endsWith('USDT')) {
+            formatted = formatted.replace('USDT', '_USDT');
+        } else if (formatted.endsWith('INR')) {
+            formatted = formatted.replace('INR', '_INR');
+        }
+    }
+
+    return `B-${formatted}`;
+}
+
