@@ -113,7 +113,7 @@ export const runBacktest = async (req, res) => {
             pair,
             riskAmount,
             trades: realTrades,
-            simulatedTrades: simulationResult.trades || [],
+            simulatedTrades: (simulationResult.trades || []).sort((a, b) => new Date(b.entryTime || b.time).getTime() - new Date(a.entryTime || a.time).getTime()),
             tradesCount: realTrades.length,
             dailyPnl: realTrades.reduce((a, t) => a + (t.profit || 0), 0),
             candles: candles.filter(c => c.time >= simulationStartUnix * 1000),

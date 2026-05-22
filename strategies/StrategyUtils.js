@@ -68,3 +68,15 @@ export function formatPair(pair) {
     return `B-${formatted}`;
 }
 
+export function calculateTradeProfit(trade, exitPrice, feeRate) {
+  const isBuy = trade.direction === 'buy';
+  const priceDiff = isBuy ? exitPrice - trade.entryPrice : trade.entryPrice - exitPrice;
+  const qty = trade.qty || 1;
+  const grossProfit = priceDiff * qty;
+  const entryFee = trade.entryPrice * qty * feeRate;
+  const exitFee = exitPrice * qty * feeRate;
+  const fee = entryFee + exitFee;
+  const profit = grossProfit - fee;
+  const pnlPercent = (profit / (trade.entryPrice * qty)) * 100 * (trade.leverage || 1);
+  return { profit, fee, pnlPercent, grossProfit, entryFee, exitFee };
+}
