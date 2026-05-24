@@ -1,3 +1,24 @@
-node_modules
+# Dependencies
+node_modules/
+yarn.lock
+package-lock.json
+
+# Environment variables
 .env
+.env.development
+.env.production
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# OS metadata
 .DS_Store
+Thumbs.db
+
+# Deployment files
+*.tgz
+dist/
+build/
+*.zip
