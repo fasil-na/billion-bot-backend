@@ -15,13 +15,12 @@ const MIN_C2_BODY_RATIO = 0.001;
 const RSI_PERIOD = 14;
 const RSI_BULLISH_MIN = 15;
 const RSI_BULLISH_MAX = 75;
-const MIN_RISK_PER_UNIT = 5;
+const MIN_RISK_PER_UNIT = 55;
 const BEARISH_SL_BUFFER_RATIO = 0.001;
 const RSI_BEARISH_MIN = 15;
 const RSI_BEARISH_MAX = 75;
 
 const INITIAL_BALANCE = 10000;
-const DEFAULT_MIN_NOTIONAL = 6;
 const DEFAULT_PAIR_KEY = 'B-BTC_USDT';
 const TRADE_TIMEZONE = 'Asia/Kolkata';
 const DEFAULT_RESOLUTION = "15";
@@ -32,8 +31,8 @@ export class FVGStrategy {
     id = "fvg-imbalance";
     name = "Fair Value Gap Strategy";
     description = "Institutional imbalance detection with consequent encroachment entry logic.";
-
     run(candles, params, subCandles = []) {
+
         if (params.type === 'live') {
             return this.checkSignal(candles, params);
         }

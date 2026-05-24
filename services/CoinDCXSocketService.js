@@ -115,6 +115,13 @@ class CoinDCXSocketService extends EventEmitter {
               pair = `${parts[0]}_${parts[1]}`.replace("-futures", "");
             }
           }
+          let resolution = null;
+          const channelStr = parsed.channel || response.channel || "";
+          const resMatch = channelStr.match(/_(\d+)[A-Za-z]+-futures/);
+          if (resMatch) {
+            resolution = resMatch[1];
+          }
+
           const safe = (v) => {
             const n = Number(v);
             return isNaN(n) ? 0 : n;
@@ -122,6 +129,7 @@ class CoinDCXSocketService extends EventEmitter {
           const formattedCandle = {
             time,
             pair,
+            resolution,
             open: safe(candleData.open || candleData.o),
             high: safe(candleData.high || candleData.h),
             low: safe(candleData.low || candleData.l),

@@ -68,15 +68,47 @@ export function formatPair(pair) {
     return `B-${formatted}`;
 }
 
-export function calculateTradeProfit(trade, exitPrice, feeRate) {
-  const isBuy = trade.direction === 'buy';
-  const priceDiff = isBuy ? exitPrice - trade.entryPrice : trade.entryPrice - exitPrice;
-  const qty = trade.qty || 1;
-  const grossProfit = priceDiff * qty;
-  const entryFee = trade.entryPrice * qty * feeRate;
-  const exitFee = exitPrice * qty * feeRate;
-  const fee = entryFee + exitFee;
-  const profit = grossProfit - fee;
-  const pnlPercent = (profit / (trade.entryPrice * qty)) * 100 * (trade.leverage || 1);
-  return { profit, fee, pnlPercent, grossProfit, entryFee, exitFee };
+// export function calculateTradeProfit(trade, exitPrice, feeRate) {
+//   const isBuy = trade.direction === 'buy';
+//   const entryPriceToUse = trade.actualEntryPrice || trade.entryPrice;
+//   const priceDiff = isBuy ? exitPrice - entryPriceToUse : entryPriceToUse - exitPrice;
+//   const qty = trade.units || trade.qty || 1;
+//   const grossProfit = priceDiff * qty;
+//   const entryFee = entryPriceToUse * qty * feeRate;
+//   const exitFee = exitPrice * qty * feeRate;
+//   const fee = entryFee + exitFee;
+//   const profit = grossProfit - fee;
+//   const pnlPercent = (profit / (entryPriceToUse * qty)) * 100 * (trade.leverage || 1);
+//   return { profit, fee, pnlPercent, grossProfit, entryFee, exitFee };
+// }
+
+export function calculateTradeProfit(
+    trade,
+    exitPrice,
+    feeRate // fallback if we don't have distinct maker/taker
+) {
+    const units = trade.units || 0;
+ 
+    const grossProfit = trade.direction === 'buy'
+        ? (exitPrice - trade.entryPrice) * units
+        : (trade.entryPrice - exitPrice) * units;
+ 
+    const pnlPercent = trade.entryPrice > 0 ? (grossProfit / (trade.entryPrice * units / (trade.leverage || 1))) * 100 : 0;
+    
+    const MAKER_FEE_RATE = 0.0003;
+    const TAKER_FEE_RATE = 0.0006;
+
+    const entryFee = Math.ceil(trade.entryPrice * units * MAKER_FEE_RATE * 1000) / 1000;
+    const exitFee = Math.ceil(exitPrice * units * TAKER_FEE_RATE * 1000) / 1000;
+    const totalFee = entryFee + exitFee;
+
+    return {
+        profit: parseFloat((grossProfit - totalFee).toFixed(3)),
+        fee: parseFloat(totalFee.toFixed(3)),
+        grossProfit: parseFloat(grossProfit.toFixed(3)),
+        entryFee: parseFloat(entryFee.toFixed(3)),
+        exitFee: parseFloat(exitFee.toFixed(3)),
+        points: parseFloat((exitPrice - trade.entryPrice).toFixed(3)),
+        pnlPercent: parseFloat(pnlPercent.toFixed(2))
+    };
 }
