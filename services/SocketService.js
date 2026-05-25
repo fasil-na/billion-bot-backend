@@ -651,7 +651,7 @@ class SocketService {
           }
 
           const { profit, fee, pnlPercent, grossProfit, entryFee, exitFee } =
-            calculateTradeProfit(tradeToClose, exitPrice, 5e-4);
+            calculateTradeProfit(tradeToClose, exitPrice);
 
           tradeToClose.profit = profit;
           tradeToClose.fee = fee;
@@ -980,7 +980,7 @@ class SocketService {
 
       const targetPrice = reason === "SL Hit" ? sl : tp;
       const { profit, fee, pnlPercent, grossProfit, entryFee, exitFee } =
-        calculateTradeProfit(activeTrade, targetPrice, 5e-4);
+        calculateTradeProfit(activeTrade, targetPrice);
 
       const closedTrade = {
         ...activeTrade,

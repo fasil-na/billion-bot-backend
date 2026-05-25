@@ -85,7 +85,6 @@ export function formatPair(pair) {
 export function calculateTradeProfit(
     trade,
     exitPrice,
-    feeRate // fallback if we don't have distinct maker/taker
 ) {
     const units = trade.units || 0;
  
