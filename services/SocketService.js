@@ -61,6 +61,8 @@ class SocketService {
   // channel → Set<configId>
   static channelConfigs = new Map();
 
+  static globalPairLocks = new Set();
+
   // ─────────────────────────────────────────────
   // CORE HELPER — single place where state is written.
   // Never use configStates.set(id, { ...state, ... }) directly anywhere else.
@@ -366,13 +368,6 @@ class SocketService {
           const isNewCandleTrigger = registry.candles.length > 0;
           registry.candleIndexMap.set(data.time, registry.candles.length);
           registry.candles.push(data);
-          // [RACE-2] Prune with slice — atomic, no index corruption
-          if (registry.candles.length > 3_000) {
-            const trimmed = registry.candles.slice(-2_000);
-            const newMap = new Map(trimmed.map((c, i) => [c.time, i]));
-            registry.candles = trimmed;
-            registry.candleIndexMap = newMap;
-          }
 
           // Fire strategy for each config watching this channel
           const targetConfigs = this.channelConfigs.get(channel);
@@ -419,24 +414,21 @@ class SocketService {
         }
 
         // ── Real-time SL/TP monitoring (paper trades + limit order expiry) ──
-        const tickerConfigs = this.channelConfigs.get(
-          this.formatChannel(incomingPair, "1")
-        );
-        if (tickerConfigs) {
-          for (const configId of tickerConfigs) {
-            // [RACE-5] Read fresh state per tick — not a captured reference
-            const state = this.getState(configId);
-            if (!state) continue;
-            if (state.activeTrade?.status === "open") {
-              this.monitorRealTimeSL(data, configId).catch((err) =>
-                LoggerService.log(
-                  "error",
-                  `[Monitor] ${configId} Error: ${err.message}`,
-                  "SocketService",
-                  { configId }
-                )
-              );
-            }
+        // Fix: Check EVERY active config for this pair, regardless of its timeframe (1m, 15m, 1H)
+        const cleanIncoming = incomingPair.replace(/^B-/, "").toLowerCase();
+        
+        for (const [configId, state] of this.configStates.entries()) {
+          const configPair = (state.config.pair || "").replace(/^B-/, "").toLowerCase();
+          
+          if (configPair === cleanIncoming && state.activeTrade?.status === "open") {
+            this.monitorRealTimeSL(data, configId).catch((err) =>
+              LoggerService.log(
+                "error",
+                `[Monitor] ${configId} Error: ${err.message}`,
+                "SocketService",
+                { configId }
+              )
+            );
           }
         }
       } catch (err) {
@@ -701,52 +693,58 @@ class SocketService {
         return;
       }
 
-      // Check DB for any active trade on this pair (cross-config safety check)
-      const globalActiveTrade = await TradeHistoryService.getActiveTradeByPair(pair);
-      console.log(globalActiveTrade, "globalActiveTrade");
+      if (state.activeTrade || this.globalPairLocks?.has(pair)) return;
+      this.globalPairLocks.add(pair);
 
-      if (globalActiveTrade) {
-        if (!state.activeTrade) {
-          this.updateState(configId, { activeTrade: globalActiveTrade });
+      try {
+        // Check DB for any active trade on this pair (cross-config safety check)
+        const globalActiveTrade = await TradeHistoryService.getActiveTradeByPair(pair);
+        console.log(globalActiveTrade, "globalActiveTrade");
+
+        if (globalActiveTrade) {
+          if (!state.activeTrade) {
+            this.updateState(configId, { activeTrade: globalActiveTrade });
+          }
+          return;
         }
-        return;
-      }
 
-      if (candles.length < 2) return;
+        if (candles.length < 2) return;
 
-      const latestCandle = candles[candles.length - 1];
-      if (!latestCandle) return;
+        const latestCandle = candles[candles.length - 1];
+        if (!latestCandle) return;
 
-      // Re-read fresh state to get latest lastSignalTime
-      const freshState = this.getState(configId);
-      if (freshState?.lastSignalTime === latestCandle.time) return;
+        // Re-read fresh state to get latest lastSignalTime
+        const freshState = this.getState(configId);
+        if (freshState?.lastSignalTime === latestCandle.time) return;
 
-      console.log(`[Strategy] 🔍 Scanning ${pair} for '${config.strategyId}' signal...`);
+        console.log(`[Strategy] 🔍 Scanning ${pair} for '${config.strategyId}' signal...`);
 
-      const result = strategy.run(candles, {
-        pair,
-        type: "live",
-        riskAmount: config.riskAmount || 0.05,
-        leverage: config.leverage || 20,
-        maxPositionSize: config.maxPositionSize || 85,
-        atrMultiplierSL: 1,
-        simulationStartUnix: Math.floor(Date.now() / 1000) - 86400,
-      });
+        const result = strategy.run(candles, {
+          pair,
+          type: "live",
+          riskAmount: config.riskAmount || 0.05,
+          leverage: config.leverage || 20,
+          maxPositionSize: config.maxPositionSize || 85,
+          atrMultiplierSL: 1,
+          simulationStartUnix: Math.floor(Date.now() / 1000) - 86400,
+        });
 
-      console.log(result.matched, result.trade, "result.matched && result.trade");
+        console.log(result.matched, result.trade, "result.matched && result.trade");
 
-      if (result.matched && result.trade) {
-        // [RACE-4] updateState carries lastSignalTime through — never dropped
-        this.updateState(configId, { lastSignalTime: latestCandle.time });
+        if (result.matched && result.trade) {
+          this.updateState(configId, { lastSignalTime: latestCandle.time });
 
-        await LoggerService.log(
-          "info",
-          `🎯 Signal Detected: ${result.trade.direction.toUpperCase()} for ${pair}`,
-          "SocketService",
-          { configId, pair, metadata: result.trade }
-        );
+          await LoggerService.log(
+            "info",
+            `🎯 Signal Detected: ${result.trade.direction.toUpperCase()} for ${pair}`,
+            "SocketService",
+            { configId, pair, metadata: result.trade }
+          );
 
-        await this.handleOrderEntry(configId, result.trade);
+          await this.handleOrderEntry(configId, result.trade);
+        }
+      } finally {
+        this.globalPairLocks.delete(pair);
       }
     } catch (err) {
       LoggerService.log(
@@ -810,6 +808,7 @@ class SocketService {
           maxPositionSize: config.maxPositionSize,
           stop_loss_price: trade.sl,
           riskAmount: config.riskAmount,
+          client_order_id: `${configId}-${Date.now()}`,
         });
 
         // Small delay to let exchange confirm
