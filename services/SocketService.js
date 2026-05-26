@@ -563,10 +563,8 @@ console.log(positions,'positions=======')
       this.updateState(id, { positionMissCount: 0 });
     }
 
-    // Detect position closed (handle backend restarts by also checking database state)
-    const isLocallyOpen = state.activeTrade && state.activeTrade.status === "open" && state.activeTrade.type === "real";
-    
-    if ((wasActive || isLocallyOpen) && !isActive) {
+    // Detect position closed
+    if (wasActive && !isActive) {
       // [CRITICAL-4] Read fresh from map — the local `state` reference may be stale
       const freshState = this.getState(id);
       if (!freshState) return;
