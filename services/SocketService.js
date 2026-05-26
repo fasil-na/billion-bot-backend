@@ -444,7 +444,7 @@ class SocketService {
     // ── POSITION UPDATE ──────────────────────────
     coinDCXSocket.on("df-position-update", async (positions) => {
       let posList = [];
-
+console.log(positions,'positions=======')
       try {
         const raw = Array.isArray(positions)
           ? positions
@@ -563,24 +563,16 @@ class SocketService {
       this.updateState(id, { positionMissCount: 0 });
     }
 
-    // Debounce position-closed detection (require 3 consecutive absent readings)
-    if (wasActive && !isActive) {
+    // Detect position closed (handle backend restarts by also checking database state)
+    const isLocallyOpen = state.activeTrade && state.activeTrade.status === "open" && state.activeTrade.type === "real";
+    
+    if ((wasActive || isLocallyOpen) && !isActive) {
       // [CRITICAL-4] Read fresh from map — the local `state` reference may be stale
       const freshState = this.getState(id);
       if (!freshState) return;
 
-      const newCount = (freshState.positionMissCount || 0) + 1;
-      this.updateState(id, { positionMissCount: newCount });
-
-      if (newCount < 3) {
-        console.log(
-          `[Position] Miss count for ${pair}: ${newCount}/3 — waiting for confirmation`
-        );
-        return;
-      }
-
-      // Confirmed closed — proceed
-      console.log(`[Position] Trade CLOSED on exchange for ${pair} (confirmed after 3 readings)`);
+      // Confirmed closed — proceed instantly
+      console.log(`[Position] Trade CLOSED on exchange for ${pair} (closing instantly)`);
       this.updateState(id, { positionMissCount: 0 });
 
       const tradeToClose = freshState.activeTrade;
@@ -596,7 +588,7 @@ class SocketService {
 
       try {
         // Give exchange a moment to settle the final fill
-        await new Promise((r) => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, 2000));
 
         const orders = await TradeService.getOrders();
         const exitOrder = Array.isArray(orders)
