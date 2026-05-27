@@ -60,7 +60,7 @@ class TradeService {
       const { pair, qty, maxLeverage, tpPrice, slPrice, marginName, formattedEntryPrice } = this.formatTradeParams(
         trade.pair,
         Number(trade.units),
-        Number(trade.leverage) || 10,
+        Number(trade.leverage) || 20,
         // Use leverage from trade config (LiveConfig), default to 10 if missing
         Number(trade.take_profit_price || trade.tp || 0),
         Number(trade.stop_loss_price || trade.sl || 0),
