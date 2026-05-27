@@ -8,7 +8,7 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 const DEFAULT_RISK_REWARD_RATIO = 3.5;
-export const FVG_EXPIRY_CANDLES = 10;
+export const FVG_EXPIRY_CANDLES = 50;
 const RANGE_LOOKBACK = 10;
 const MIN_GAP_SIZE_RATIO = 0.00005;
 const MIN_C2_BODY_RATIO = 0.001;
