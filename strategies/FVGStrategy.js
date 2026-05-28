@@ -8,7 +8,7 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 const DEFAULT_RISK_REWARD_RATIO = 3.5;
-export const FVG_EXPIRY_CANDLES = 10;
+export const FVG_EXPIRY_CANDLES = 4;
 const RANGE_LOOKBACK = 10;
 const MIN_GAP_SIZE_RATIO = 0.00005;
 const MIN_C2_BODY_RATIO = 0.001;
@@ -16,6 +16,7 @@ const RSI_PERIOD = 14;
 const RSI_BULLISH_MIN = 15;
 const RSI_BULLISH_MAX = 75;
 const MIN_RISK_PER_UNIT = 35;
+const MAX_RISK_PER_UNIT = 150;
 const BEARISH_SL_BUFFER_RATIO = 0.001;
 const RSI_BEARISH_MIN = 15;
 const RSI_BEARISH_MAX = 75;
@@ -192,7 +193,7 @@ export class FVGStrategy {
                         const buffer = 0;
                         const riskPerUnit = Math.abs(midpoint - (fvg.bottom - buffer));
 
-                        if (riskPerUnit < MIN_RISK_PER_UNIT) {
+                        if (riskPerUnit < MIN_RISK_PER_UNIT || riskPerUnit > MAX_RISK_PER_UNIT) {
                             fvg.filled = true;
                             fvg.filledAt = curr.time;
                             activeFVGs.splice(j, 1);
@@ -284,7 +285,7 @@ export class FVGStrategy {
                         const buffer = gapSize * BEARISH_SL_BUFFER_RATIO;
                         const riskPerUnit = Math.abs((fvg.top + buffer) - midpoint);
 
-                        if (riskPerUnit < MIN_RISK_PER_UNIT) {
+                        if (riskPerUnit < MIN_RISK_PER_UNIT || riskPerUnit > MAX_RISK_PER_UNIT) {
                             fvg.filled = true;
                             fvg.filledAt = curr.time;
                             activeFVGs.splice(j, 1);
