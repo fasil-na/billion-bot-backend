@@ -884,7 +884,7 @@ console.log(positions,'positions=======')
         // Skip sentinel trades — not confirmed on exchange yet
         if (activeTrade._sentinel) return;
 
-        const intervalStr = state.config.interval || "1";
+        const intervalStr = state.config.timeInterval || state.config.interval || "15";
         const intervalMinutes =
           intervalStr === "1D"
             ? 1440
