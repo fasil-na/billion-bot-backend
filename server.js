@@ -7,6 +7,7 @@ import { createServer } from 'http';
 import marketRoutes from './routes/market.js';
 import configRoutes from './routes/config.js';
 import tradeRoutes from './routes/trades.js';
+import logRoutes from './routes/logs.js';
 import { SocketService } from './services/SocketService.js';
 
 const app = express();
@@ -32,6 +33,7 @@ app.get('/api', (req, res) => {
 app.use('/api/market', marketRoutes);
 app.use('/api/configs', configRoutes);
 app.use('/api/trades', tradeRoutes);
+app.use('/api/logs', logRoutes);
 
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));

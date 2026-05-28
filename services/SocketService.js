@@ -214,7 +214,7 @@ class SocketService {
       }
     }
 
-    LoggerService.log("info", `Config ${configId} removed from SocketService`, "SocketService");
+    LoggerService.log("imp", `Config ${configId} removed from SocketService`, "SocketService");
   }
 
   // ─────────────────────────────────────────────
@@ -358,7 +358,7 @@ class SocketService {
           const lastCandle = registry.candles[registry.candles.length - 1];
           if (lastCandle && data.time < lastCandle.time) {
             LoggerService.log(
-              "warning",
+              "imp",
               `Out-of-order candle ignored for ${channel}: incoming=${data.time} last=${lastCandle.time}`,
               "SocketService"
             );
@@ -371,7 +371,7 @@ class SocketService {
 
           // Fire strategy for each config watching this channel
           const targetConfigs = this.channelConfigs.get(channel);
-          console.log(targetConfigs,'targetConfigs',isNewCandleTrigger)
+     
           if (targetConfigs && isNewCandleTrigger) {
             for (const configId of targetConfigs) {
               // [CRITICAL-2] Always read fresh state — never use a captured variable
@@ -381,11 +381,6 @@ class SocketService {
               // The candle that just closed is the second-to-last
               const closedCandle = registry.candles[registry.candles.length - 2];
               if (!closedCandle) continue;
-
-              // [SYNC-1] Since the channel natively streams the correct interval, we don't need to skip ticks
-              // The new candle trigger natively means a full interval candle closed.
-              const candleTime = dayjs(closedCandle.time).tz("Asia/Kolkata");
-
               await state.mutex.runExclusive(async () => {
                 // Re-read inside mutex — state may have changed while we awaited the lock
                 const freshState = this.getState(configId);
@@ -724,13 +719,6 @@ console.log(positions,'positions=======')
         if (result.matched && result.trade) {
           this.updateState(configId, { lastSignalTime: latestCandle.time });
 
-          await LoggerService.log(
-            "info",
-            `🎯 Signal Detected: ${result.trade.direction.toUpperCase()} for ${pair}`,
-            "SocketService",
-            { configId, pair, metadata: result.trade }
-          );
-
           await this.handleOrderEntry(configId, result.trade);
         }
       } finally {
@@ -784,12 +772,7 @@ console.log(positions,'positions=======')
       });
 
       try {
-        await LoggerService.log(
-          "info",
-          `🚀 Executing REAL entry for ${pair}...`,
-          "SocketService",
-          { configId, pair }
-        );
+     
 
         await TradeService.executeFutureOrder({
           ...trade,
@@ -872,7 +855,7 @@ console.log(positions,'positions=======')
       this.updateState(configId, { activeTrade: savedTrade });
 
       await LoggerService.log(
-        "info",
+        "imp",
         `🏁 Paper Trade Initialized for ${pair}`,
         "SocketService",
         { configId, pair, metadata: savedTrade }
@@ -914,7 +897,7 @@ console.log(positions,'positions=======')
 
         if (minutesElapsed >= maxWaitMinutes) {
           await LoggerService.log(
-            "warning",
+            "imp",
             `⏳ Limit order expired after ${FVG_EXPIRY_CANDLES} candles ` +
               `(${maxWaitMinutes}m) for ${activeTrade.pair}. Cancelling...`,
             "SocketService",
