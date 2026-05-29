@@ -220,7 +220,12 @@ export class FVGStrategy {
                         continue;
                     }
 
-                    const entryCondition = (curr.low <= midpoint && curr.high >= midpoint);
+                    let entryCondition = false;
+                    if (params.type === 'live_signal' && i === fvg.formedAt + 1) {
+                        entryCondition = true;
+                    } else {
+                        entryCondition = (curr.low <= midpoint && curr.high >= midpoint);
+                    }
                     if (entryCondition) {
                         if (curr.time < simulationStart) {
                             fvg.filled = true;
@@ -311,7 +316,12 @@ export class FVGStrategy {
                         continue;
                     }
 
-                    const entryCondition = (curr.high >= midpoint && curr.low <= midpoint);
+                    let entryCondition = false;
+                    if (params.type === 'live_signal' && i === fvg.formedAt + 1) {
+                        entryCondition = true;
+                    } else {
+                        entryCondition = (curr.high >= midpoint && curr.low <= midpoint);
+                    }
                     if (entryCondition) {
                         if (curr.time < simulationStart) {
                             fvg.filled = true;
