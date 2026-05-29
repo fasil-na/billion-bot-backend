@@ -768,19 +768,24 @@ console.log(positions,'positions=======')
         return;
       }
 
-      if (state.activeTrade || this.globalPairLocks?.has(pair)) return;
+      const isPositionOpen = !!state.currentPosition && state.currentPosition.active_pos !== 0;
+      
+      // We only skip strategy evaluation if the position is FILLED, we are actively placing/closing, or locked.
+      if (isPositionOpen || state.isClosingPosition || state.isPlacingOrder || this.globalPairLocks?.has(pair)) return;
       this.globalPairLocks.add(pair);
 
       try {
         // Check DB for any active trade on this pair (cross-config safety check)
         const globalActiveTrade = await TradeHistoryService.getActiveTradeByPair(pair);
-        console.log(globalActiveTrade, "globalActiveTrade");
 
         if (globalActiveTrade) {
           if (!state.activeTrade) {
             this.updateState(configId, { activeTrade: globalActiveTrade });
           }
-          return;
+          // If the DB trade has an actualEntryPrice, it is FILLED. We skip strategy evaluation.
+          if (globalActiveTrade.actualEntryPrice) {
+            return;
+          }
         }
 
         if (candles.length < 2) return;
@@ -807,9 +812,36 @@ console.log(positions,'positions=======')
         console.log(result.matched, result.trade, "result.matched && result.trade");
 
         if (result.matched && result.trade) {
-          this.updateState(configId, { lastSignalTime: latestCandle.time });
-
-          await this.handleOrderEntry(configId, result.trade);
+          if (state.activeTrade) {
+             // Check if the new FVG signal is fundamentally different from the currently pending Limit Order
+             const isDifferent = Math.abs(state.activeTrade.entryPrice - result.trade.entryPrice) > 0.0001;
+             
+             if (isDifferent) {
+                await LoggerService.log("imp", `🚨 New FVG detected for ${pair}! Cancelling stale Limit Order and replacing.`, "SocketService", { configId, pair });
+                
+                // Cancel the old order on the exchange
+                if (state.config.autoTrade) {
+                    await TradeService.cancelAllOrders(pair);
+                }
+                
+                // Mark the old trade as cancelled in DB
+                await TradeHistoryService.updateTrade(state.activeTrade._id, {
+                    status: "cancelled",
+                    exitReason: "New FVG Formed (Replaced)"
+                });
+                
+                this.io.emit("trade-history-update", { ...state.activeTrade, status: "cancelled", exitReason: "New FVG Formed (Replaced)" });
+                
+                // Clear the state so the new order can be processed cleanly
+                this.updateState(configId, { activeTrade: null, lastSignalTime: latestCandle.time });
+                
+                // Place the brand new order!
+                await this.handleOrderEntry(configId, result.trade);
+             }
+          } else {
+             this.updateState(configId, { lastSignalTime: latestCandle.time });
+             await this.handleOrderEntry(configId, result.trade);
+          }
         }
       } finally {
         this.globalPairLocks.delete(pair);

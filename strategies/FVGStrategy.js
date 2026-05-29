@@ -126,7 +126,13 @@ export class FVGStrategy {
                         endTime: c3.time
                     };
                     allFVGs.push(fvg);
-                    activeFVGs.push(fvg);
+                    
+                    // Option B: Invalidate any old FVGs and only track this new one
+                    activeFVGs.forEach(oldFvg => {
+                        oldFvg.filled = true;
+                        oldFvg.filledAt = c3.time;
+                    });
+                    activeFVGs = [fvg];
                 }
             } else if (c3.high < c1.low) {
                 const gapSize = c1.low - c3.high;
@@ -141,7 +147,13 @@ export class FVGStrategy {
                         endTime: c3.time
                     };
                     allFVGs.push(fvg);
-                    activeFVGs.push(fvg);
+                    
+                    // Option B: Invalidate any old FVGs and only track this new one
+                    activeFVGs.forEach(oldFvg => {
+                        oldFvg.filled = true;
+                        oldFvg.filledAt = c3.time;
+                    });
+                    activeFVGs = [fvg];
                 }
             }
 
