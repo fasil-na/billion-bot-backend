@@ -8,31 +8,31 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 export const STRATEGY_CONFIGS = {
     'b-btc_usdt': {
-    riskRewardRatio: 4.5,        // higher RR → compensate more SL hits
+        riskRewardRatio: 4.5,        // higher RR → compensate more SL hits
 
-    fvgExpiryCandles: 50,        // allow older FVGs (more trades)
+        fvgExpiryCandles: 50,        // allow older FVGs (more trades)
 
-    rangeLookback: 5,            // smaller range → more signals
+        rangeLookback: 5,            // smaller range → more signals
 
-    minGapSizeRatio: 0.00002,    // accept smaller gaps
+        minGapSizeRatio: 0.00002,    // accept smaller gaps
 
-    minC2BodyRatio: 0.0006,      // weaker confirmation candle allowed
+        minC2BodyRatio: 0.0006,      // weaker confirmation candle allowed
 
-    rsiPeriod: 12,               // faster RSI reaction
+        rsiPeriod: 12,               // faster RSI reaction
 
-    rsiBullishMin: 10,           // allow early entries
-    rsiBullishMax: 80,
+        rsiBullishMin: 10,           // allow early entries
+        rsiBullishMax: 80,
 
-    rsiBearishMin: 15,
-    rsiBearishMax: 85,
+        rsiBearishMin: 15,
+        rsiBearishMax: 85,
 
-    minRiskPerUnit: 3,           // allow smaller moves
-    maxRiskPerUnit: 200,         // allow bigger volatility trades
+        minRiskPerUnit: 3,           // allow smaller moves
+        maxRiskPerUnit: 200,         // allow bigger volatility trades
 
-    bearishSlBufferRatio: 0.0007, // tighter SL → more trades, more SL hits
+        bearishSlBufferRatio: 0.0007, // tighter SL → more trades, more SL hits
 
-    initialBalance: 5
-},
+        initialBalance: 5
+    },
     'b-eth_usdt': {
         riskRewardRatio: 4.8,
         fvgExpiryCandles: 9,
@@ -77,17 +77,17 @@ export class FVGStrategy {
         let balance = params.initialBalance || config.initialBalance;
         const rr = params.riskRewardRatio || config.riskRewardRatio;
         const riskAmount = parseFloat(params.riskAmount) || 100;
-        const fvgExpiryCandles =  config.fvgExpiryCandles;
-        const minGapSizeRatio =  config.minGapSizeRatio;
-        const minC2BodyRatio =  config.minC2BodyRatio;
-        const rsiPeriod =  config.rsiPeriod;
-        const rsiBullishMin =  config.rsiBullishMin;
-        const rsiBullishMax =  config.rsiBullishMax;
-        const rsiBearishMin =  config.rsiBearishMin;
-        const rsiBearishMax =  config.rsiBearishMax;
-        const minRiskPerUnit =  config.minRiskPerUnit;
-        const maxRiskPerUnit =  config.maxRiskPerUnit;
-        const bearishSlBufferRatio =  config.bearishSlBufferRatio;
+        const fvgExpiryCandles = config.fvgExpiryCandles;
+        const minGapSizeRatio = config.minGapSizeRatio;
+        const minC2BodyRatio = config.minC2BodyRatio;
+        const rsiPeriod = config.rsiPeriod;
+        const rsiBullishMin = config.rsiBullishMin;
+        const rsiBullishMax = config.rsiBullishMax;
+        const rsiBearishMin = config.rsiBearishMin;
+        const rsiBearishMax = config.rsiBearishMax;
+        const minRiskPerUnit = config.minRiskPerUnit;
+        const maxRiskPerUnit = config.maxRiskPerUnit;
+        const bearishSlBufferRatio = config.bearishSlBufferRatio;
         const rangeLookback = config.rangeLookback;
         const simulationStart = params.simulationStartUnix ? params.simulationStartUnix * 1000 : 0;
 
@@ -197,6 +197,7 @@ export class FVGStrategy {
                 if (!fvg) continue;
 
                 if (i <= fvg.formedAt) continue;
+                if (params.type === 'live_signal' && i !== candles.length - 1) continue;
 
                 if (i - fvg.formedAt > fvgExpiryCandles) {
                     fvg.filled = true;
@@ -220,9 +221,8 @@ export class FVGStrategy {
                         continue;
                     }
 
-                    const entryCondition = (curr.low <= midpoint && curr.high >= midpoint);
-                    const liveTrigger = params.type === 'live_signal' && i === candles.length - 1;
-                    if (entryCondition || liveTrigger) {
+                    const entryCondition = params.type === 'live_signal' ? true : (curr.low <= midpoint && curr.high >= midpoint);
+                    if (entryCondition) {
                         if (curr.time < simulationStart) {
                             fvg.filled = true;
                             fvg.filledAt = curr.time;
@@ -235,12 +235,10 @@ export class FVGStrategy {
                         const riskPerUnit = Math.abs(midpoint - (fvg.bottom - buffer));
 
                         if (riskPerUnit < minRiskPerUnit || riskPerUnit > maxRiskPerUnit) {
-                            if (entryCondition) {
-                                fvg.filled = true;
-                                fvg.filledAt = curr.time;
-                                activeFVGs.splice(j, 1);
-                                j--;
-                            }
+                            fvg.filled = true;
+                            fvg.filledAt = curr.time;
+                            activeFVGs.splice(j, 1);
+                            j--;
                             continue;
                         }
 
@@ -253,12 +251,10 @@ export class FVGStrategy {
 
                         const minQty = Math.ceil((staticData.minNotional / midpoint) / staticData.qtyStep) * staticData.qtyStep;
                         if (units < minQty || units <= 0) {
-                            if (entryCondition) {
-                                fvg.filled = true;
-                                fvg.filledAt = curr.time;
-                                activeFVGs.splice(j, 1);
-                                j--;
-                            }
+                            fvg.filled = true;
+                            fvg.filledAt = curr.time;
+                            activeFVGs.splice(j, 1);
+                            j--;
                             continue;
                         }
 
@@ -278,10 +274,6 @@ export class FVGStrategy {
                             profit: 0,
                             indicators: { fvgTop: fvg.top, fvgBottom: fvg.bottom }
                         };
-
-                        if (params.type === 'live_signal' && i === candles.length - 1) {
-                            break;
-                        }
 
                         const exitInfo = this.checkIntraCandleExit(activeTrade, curr, subCandles);
                         if (exitInfo) {
@@ -320,9 +312,8 @@ export class FVGStrategy {
                         continue;
                     }
 
-                    const entryCondition = (curr.high >= midpoint && curr.low <= midpoint);
-                    const liveTrigger = params.type === 'live_signal' && i === candles.length - 1;
-                    if (entryCondition || liveTrigger) {
+                    const entryCondition = params.type === 'live_signal' ? true : (curr.high >= midpoint && curr.low <= midpoint);
+                    if (entryCondition) {
                         if (curr.time < simulationStart) {
                             fvg.filled = true;
                             fvg.filledAt = curr.time;
@@ -336,12 +327,10 @@ export class FVGStrategy {
                         const riskPerUnit = Math.abs((fvg.top + buffer) - midpoint);
 
                         if (riskPerUnit < minRiskPerUnit || riskPerUnit > maxRiskPerUnit) {
-                            if (entryCondition) {
-                                fvg.filled = true;
-                                fvg.filledAt = curr.time;
-                                activeFVGs.splice(j, 1);
-                                j--;
-                            }
+                            fvg.filled = true;
+                            fvg.filledAt = curr.time;
+                            activeFVGs.splice(j, 1);
+                            j--;
                             continue;
                         }
 
@@ -353,12 +342,10 @@ export class FVGStrategy {
 
                         const minQty = Math.ceil((staticData.minNotional / midpoint) / staticData.qtyStep) * staticData.qtyStep;
                         if (units < minQty || units <= 0) {
-                            if (entryCondition) {
-                                fvg.filled = true;
-                                fvg.filledAt = curr.time;
-                                activeFVGs.splice(j, 1);
-                                j--;
-                            }
+                            fvg.filled = true;
+                            fvg.filledAt = curr.time;
+                            activeFVGs.splice(j, 1);
+                            j--;
                             continue;
                         }
 
@@ -378,10 +365,6 @@ export class FVGStrategy {
                             profit: 0,
                             indicators: { fvgTop: fvg.top, fvgBottom: fvg.bottom }
                         };
-
-                        if (params.type === 'live_signal' && i === candles.length - 1) {
-                            break;
-                        }
 
                         const exitInfo = this.checkIntraCandleExit(activeTrade, curr, subCandles);
                         if (exitInfo) {
@@ -413,12 +396,12 @@ export class FVGStrategy {
         }
         return {
             trades,
-            initialBalance: params.initialBalance ,
+            initialBalance: params.initialBalance,
             finalBalance: balance,
             trade: activeTrade,
             totalTrades: trades.length,
             winRate: trades.length > 0 ? (trades.filter(t => t.profit > 0).length / trades.length) * 100 : 0,
-            netProfit: balance - (params.initialBalance ),
+            netProfit: balance - (params.initialBalance),
             tradeLog: trades.map(t => ({
                 type: t.direction === 'buy' ? 'BUY' : 'SELL',
                 price: t.entryPrice,
@@ -488,7 +471,7 @@ export class FVGStrategy {
     checkSignal(candles, params) {
         if (candles.length < 5) return { matched: false };
         const result = this.run(candles, { ...params, type: 'live_signal' });
-        
+
         if (!result.trade) {
             return { matched: false };
         }
@@ -497,10 +480,10 @@ export class FVGStrategy {
         // Only accept the signal if the simulated trade was entered on the most recently closed candle
         // (or the currently forming candle). If it's older, it's a stale trade that the live bot already handled.
         const tradeEntryUnix = dayjs(result.trade.entryTime).valueOf();
-        
+
         // candles.length - 1 is the new opening candle, candles.length - 2 is the most recently closed candle
         const recentlyClosedCandleTime = candles[candles.length - 2].time;
-        
+
         if (tradeEntryUnix < recentlyClosedCandleTime) {
             return { matched: false };
         }
