@@ -38,17 +38,43 @@ async function getCandlesticks(params) {
         // };
         // const response = await axios.get(COINDCX_URL, { params });
         // let data = response.data;
-        // if (Array.isArray(data)) {
-        //     data = data.map(c => ({
-        //         ...c,
-        //         time: c.time < 10000000000 ? c.time * 1000 : c.time
-        //     }));
-        // }
-        // return { s: 'ok', data };
+         return response.data;
     } catch (error) {
-        console.error('getCandlesticks Error:', error?.response?.data || error.message);
+        console.error('Error fetching candlesticks:', error.message);
         return { s: 'error', data: [] };
     }
+}
+
+async function getPaginatedCandlesticks(params, maxDataPointsPerRequest = 2000) {
+    const { from, to, resolution } = params;
+    
+    // Determine chunk size based on resolution
+    const resValue = parseInt(resolution) || 1;
+    const chunkSeconds = resValue * 60 * (maxDataPointsPerRequest - 50); // Leave a small buffer
+    
+    const allCandles = [];
+    const promises = [];
+
+    for (let currentFrom = from; currentFrom < to; currentFrom += chunkSeconds) {
+        let currentTo = Math.min(currentFrom + chunkSeconds, to);
+        
+        const res = await getCandlesticks({ ...params, from: currentFrom, to: currentTo });
+        if (res && res.s === 'ok' && Array.isArray(res.data)) {
+            allCandles.push(...res.data);
+            console.log(`[Backtest Fetch] Resolution: ${resolution}, Date: ${dayjs(currentFrom * 1000).format('YYYY-MM-DD')}, Fetched: ${res.data.length} candles`);
+        }
+        
+        // Small delay to prevent CoinDCX rate limits (HTTP 429)
+        await new Promise(resolve => setTimeout(resolve, 200));
+    }
+
+    // Deduplicate by time (sometimes chunks overlap at the boundaries)
+    const uniqueCandlesMap = new Map();
+    for (const c of allCandles) {
+        uniqueCandlesMap.set(c.time, c);
+    }
+
+    return { s: 'ok', data: Array.from(uniqueCandlesMap.values()) };
 }
 
 export const runBacktest = async (req, res) => {
@@ -78,9 +104,8 @@ export const runBacktest = async (req, res) => {
         }
 
         const [resMain, resSub] = await Promise.all([
-            getCandlesticks({ pair, from: fetchStart, to: end, resolution: resolution }),
-
-            getCandlesticks({ pair, from: fetchStart, to: end, resolution: '1m' }).catch(() => ({ s: 'error', data: [] }))
+            getPaginatedCandlesticks({ pair, from: fetchStart, to: end, resolution: resolution }),
+            getPaginatedCandlesticks({ pair, from: fetchStart, to: end, resolution: '1m' })
         ]);
 
         if (resMain.s !== 'ok' || !Array.isArray(resMain.data)) {

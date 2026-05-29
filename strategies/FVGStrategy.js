@@ -6,27 +6,58 @@ import { TradeService } from '../services/TradeService.js';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
+export const STRATEGY_CONFIGS = {
+    'b-btc_usdt': {
+    riskRewardRatio: 4.5,        // higher RR → compensate more SL hits
 
-const DEFAULT_RISK_REWARD_RATIO = 3.5;
-export const FVG_EXPIRY_CANDLES = 4;
-const RANGE_LOOKBACK = 10;
-const MIN_GAP_SIZE_RATIO = 0.00005;
-const MIN_C2_BODY_RATIO = 0.001;
-const RSI_PERIOD = 14;
-const RSI_BULLISH_MIN = 15;
-const RSI_BULLISH_MAX = 75;
-const MIN_RISK_PER_UNIT = 35;
-const MAX_RISK_PER_UNIT = 150;
-const BEARISH_SL_BUFFER_RATIO = 0.001;
-const RSI_BEARISH_MIN = 15;
-const RSI_BEARISH_MAX = 75;
+    fvgExpiryCandles: 50,        // allow older FVGs (more trades)
 
-const INITIAL_BALANCE = 10000;
+    rangeLookback: 5,            // smaller range → more signals
+
+    minGapSizeRatio: 0.00002,    // accept smaller gaps
+
+    minC2BodyRatio: 0.0006,      // weaker confirmation candle allowed
+
+    rsiPeriod: 12,               // faster RSI reaction
+
+    rsiBullishMin: 10,           // allow early entries
+    rsiBullishMax: 80,
+
+    rsiBearishMin: 15,
+    rsiBearishMax: 85,
+
+    minRiskPerUnit: 3,           // allow smaller moves
+    maxRiskPerUnit: 200,         // allow bigger volatility trades
+
+    bearishSlBufferRatio: 0.0007, // tighter SL → more trades, more SL hits
+
+    initialBalance: 5
+},
+    'b-eth_usdt': {
+        riskRewardRatio: 4.8,
+        fvgExpiryCandles: 9,
+        rangeLookback: 10,
+        minGapSizeRatio: 0.00004,
+        minC2BodyRatio: 0.0011,
+        rsiPeriod: 17,
+        rsiBullishMin: 19,
+        rsiBullishMax: 75,
+        rsiBearishMin: 23,
+        rsiBearishMax: 72,
+        minRiskPerUnit: 1,
+        maxRiskPerUnit: 100,
+        bearishSlBufferRatio: 0.0023,
+        initialBalance: 5
+    }
+};
+
+
 const DEFAULT_PAIR_KEY = 'B-BTC_USDT';
 const TRADE_TIMEZONE = 'Asia/Kolkata';
 const DEFAULT_RESOLUTION = "15";
 const MAKER_FEE_RATE = 0.0003;
 const TAKER_FEE_RATE = 0.0006;
+
 
 export class FVGStrategy {
     id = "fvg-imbalance";
@@ -39,12 +70,25 @@ export class FVGStrategy {
         }
 
 
+        const cleanPairStr = (params.pair || DEFAULT_PAIR_KEY).toLowerCase();
+        const config = STRATEGY_CONFIGS[cleanPairStr] || STRATEGY_CONFIGS['b-btc_usdt'];
+
         const trades = [];
-        let balance = params.initialBalance || INITIAL_BALANCE;
-        const rr = params.riskRewardRatio || DEFAULT_RISK_REWARD_RATIO;
+        let balance = params.initialBalance || config.initialBalance;
+        const rr = params.riskRewardRatio || config.riskRewardRatio;
         const riskAmount = parseFloat(params.riskAmount) || 100;
-        const fvgExpiryCandles = FVG_EXPIRY_CANDLES;
-        const rangeLookback = RANGE_LOOKBACK;
+        const fvgExpiryCandles =  config.fvgExpiryCandles;
+        const minGapSizeRatio =  config.minGapSizeRatio;
+        const minC2BodyRatio =  config.minC2BodyRatio;
+        const rsiPeriod =  config.rsiPeriod;
+        const rsiBullishMin =  config.rsiBullishMin;
+        const rsiBullishMax =  config.rsiBullishMax;
+        const rsiBearishMin =  config.rsiBearishMin;
+        const rsiBearishMax =  config.rsiBearishMax;
+        const minRiskPerUnit =  config.minRiskPerUnit;
+        const maxRiskPerUnit =  config.maxRiskPerUnit;
+        const bearishSlBufferRatio =  config.bearishSlBufferRatio;
+        const rangeLookback = config.rangeLookback;
         const simulationStart = params.simulationStartUnix ? params.simulationStartUnix * 1000 : 0;
 
         const cleanPair = (params.pair || DEFAULT_PAIR_KEY).replace('B-', '').toLowerCase();
@@ -53,7 +97,7 @@ export class FVGStrategy {
         const pricePrecision = staticData.priceStep.toString().split('.')[1]?.length || 0;
 
         const closes = candles.map(c => c.close);
-        const rsiValues = calculateRSI(closes, RSI_PERIOD);
+        const rsiValues = calculateRSI(closes, rsiPeriod);
 
         const allFVGs = [];
         let activeFVGs = [];
@@ -71,7 +115,7 @@ export class FVGStrategy {
 
             if (c3.low > c1.high) {
                 const gapSize = c3.low - c1.high;
-                if (gapSize > (c3.close * MIN_GAP_SIZE_RATIO) && c2BodyRatio >= MIN_C2_BODY_RATIO) {
+                if (gapSize > (c3.close * minGapSizeRatio) && c2BodyRatio >= minC2BodyRatio) {
                     const fvg = {
                         top: c3.low,
                         bottom: c1.high,
@@ -86,7 +130,7 @@ export class FVGStrategy {
                 }
             } else if (c3.high < c1.low) {
                 const gapSize = c1.low - c3.high;
-                if (gapSize > (c3.close * MIN_GAP_SIZE_RATIO) && c2BodyRatio >= MIN_C2_BODY_RATIO) {
+                if (gapSize > (c3.close * minGapSizeRatio) && c2BodyRatio >= minC2BodyRatio) {
                     const fvg = {
                         top: c1.low,
                         bottom: c3.high,
@@ -170,7 +214,7 @@ export class FVGStrategy {
 
                 if (fvg.direction === "bullish") {
                     const formedRSI = rsiValues[fvg.formedAt] || 50;
-                    if (formedRSI <= RSI_BULLISH_MIN || formedRSI >= RSI_BULLISH_MAX) continue;
+                    if (formedRSI <= rsiBullishMin || formedRSI >= rsiBullishMax) continue;
 
                     if (curr.low < fvg.bottom) {
                         fvg.filled = true;
@@ -193,7 +237,7 @@ export class FVGStrategy {
                         const buffer = 0;
                         const riskPerUnit = Math.abs(midpoint - (fvg.bottom - buffer));
 
-                        if (riskPerUnit < MIN_RISK_PER_UNIT || riskPerUnit > MAX_RISK_PER_UNIT) {
+                        if (riskPerUnit < minRiskPerUnit || riskPerUnit > maxRiskPerUnit) {
                             fvg.filled = true;
                             fvg.filledAt = curr.time;
                             activeFVGs.splice(j, 1);
@@ -261,7 +305,7 @@ export class FVGStrategy {
                     }
                 } else {
                     const formedRSI = rsiValues[fvg.formedAt] || 50;
-                    if (formedRSI >= RSI_BEARISH_MAX || formedRSI <= RSI_BEARISH_MIN) continue;
+                    if (formedRSI >= rsiBearishMax || formedRSI <= rsiBearishMin) continue;
 
                     if (curr.high > fvg.top) {
                         fvg.filled = true;
@@ -282,10 +326,10 @@ export class FVGStrategy {
                         }
 
                         const gapSize = fvg.top - fvg.bottom;
-                        const buffer = gapSize * BEARISH_SL_BUFFER_RATIO;
+                        const buffer = gapSize * bearishSlBufferRatio;
                         const riskPerUnit = Math.abs((fvg.top + buffer) - midpoint);
 
-                        if (riskPerUnit < MIN_RISK_PER_UNIT || riskPerUnit > MAX_RISK_PER_UNIT) {
+                        if (riskPerUnit < minRiskPerUnit || riskPerUnit > maxRiskPerUnit) {
                             fvg.filled = true;
                             fvg.filledAt = curr.time;
                             activeFVGs.splice(j, 1);
@@ -355,12 +399,12 @@ export class FVGStrategy {
         }
         return {
             trades,
-            initialBalance: params.initialBalance || INITIAL_BALANCE,
+            initialBalance: params.initialBalance ,
             finalBalance: balance,
             trade: activeTrade,
             totalTrades: trades.length,
             winRate: trades.length > 0 ? (trades.filter(t => t.profit > 0).length / trades.length) * 100 : 0,
-            netProfit: balance - (params.initialBalance || INITIAL_BALANCE),
+            netProfit: balance - (params.initialBalance ),
             tradeLog: trades.map(t => ({
                 type: t.direction === 'buy' ? 'BUY' : 'SELL',
                 price: t.entryPrice,
@@ -430,9 +474,27 @@ export class FVGStrategy {
     checkSignal(candles, params) {
         if (candles.length < 5) return { matched: false };
         const result = this.run(candles, { ...params, type: 'live_signal' });
+        
+        if (!result.trade) {
+            return { matched: false };
+        }
+
+        // Live bot trigger safety: 
+        // Only accept the signal if the simulated trade was entered on the most recently closed candle
+        // (or the currently forming candle). If it's older, it's a stale trade that the live bot already handled.
+        const tradeEntryUnix = dayjs(result.trade.entryTime).valueOf();
+        
+        // candles.length - 1 is the new opening candle, candles.length - 2 is the most recently closed candle
+        const recentlyClosedCandleTime = candles[candles.length - 2].time;
+        
+        if (tradeEntryUnix < recentlyClosedCandleTime) {
+            return { matched: false };
+        }
+
         return {
-            matched: !!result.trade,
+            matched: true,
             trade: result.trade
         };
     }
 }
+

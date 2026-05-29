@@ -31,7 +31,7 @@ import axios from "axios";
 import { coinDCXSocket } from "./CoinDCXSocketService.js";
 import { DEFAULT_RESOLUTION } from "../config/constants.js";
 import strategies from "../strategies/index.js";
-import { FVG_EXPIRY_CANDLES } from "../strategies/FVGStrategy.js";
+import { STRATEGY_CONFIGS } from "../strategies/FVGStrategy.js";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc.js";
 import timezone from "dayjs/plugin/timezone.js";
@@ -231,6 +231,68 @@ class SocketService {
   // [RACE-1] Sets isRecovering = true so candlestick handler skips ticks
   //          during the HTTP fetch + map rebuild window.
   // ─────────────────────────────────────────────
+  
+  // ─────────────────────────────────────────────
+  // SYNC HISTORY API (Background)
+  // ─────────────────────────────────────────────
+  static async syncHistoricalCandles(channel) {
+    const registry = this.pairCandleRegistry.get(channel);
+    if (!registry) return;
+
+    try {
+      const resolutionMatch = channel.match(/_(\d+[A-Za-z]+)-futures/);
+      const resolution = resolutionMatch ? resolutionMatch[1] : "1m";
+      const pair = channel.replace(`_${resolution}-futures`, "");
+
+      const to = Math.floor(Date.now() / 1000);
+      const from = to - (48 * 60 * 60);
+
+      const response = await axios.get(
+        "https://public.coindcx.com/market_data/candlesticks",
+        {
+          params: { pair, resolution: resolution, from: from, to: to, pcode: "f" },
+          timeout: 5000,
+        }
+      );
+
+      let fetchedCandles = response.data?.data || response.data;
+
+      if (Array.isArray(fetchedCandles) && fetchedCandles.length > 0) {
+        fetchedCandles = fetchedCandles
+          .map((c) => ({
+            ...c,
+            time: c.time < 10_000_000_000 ? c.time * 1000 : c.time,
+          }))
+          .sort((a, b) => a.time - b.time);
+
+        const liveCandle = registry.candles[registry.candles.length - 1];
+        if (!liveCandle) return;
+
+        const newMap = new Map();
+        const newCandles = [];
+
+        fetchedCandles.forEach((c) => {
+          if (c.time === liveCandle.time) {
+            newCandles.push(liveCandle); // keep live tick precision for the currently forming candle
+          } else {
+            newCandles.push(c);
+          }
+          newMap.set(c.time, newCandles.length - 1);
+        });
+
+        if (!newMap.has(liveCandle.time)) {
+          newCandles.push(liveCandle);
+          newMap.set(liveCandle.time, newCandles.length - 1);
+        }
+
+        registry.candles = newCandles;
+        registry.candleIndexMap = newMap;
+      }
+    } catch (err) {
+      LoggerService.log("warn", `Failed to sync History API for ${channel}: ${err.message}`, "SocketService");
+    }
+  }
+
   static async recoverCandlesForChannel(channel) {
     const registry = this.marketRegistry.get(channel);
     if (!registry) return;
@@ -365,9 +427,16 @@ class SocketService {
             return;
           }
 
+
           const isNewCandleTrigger = registry.candles.length > 0;
           registry.candleIndexMap.set(data.time, registry.candles.length);
           registry.candles.push(data);
+
+          if (isNewCandleTrigger) {
+              // Await the history sync so our strategy uses official History API data for the closed candles!
+              await this.syncHistoricalCandles(channel);
+          }
+
 
           // Fire strategy for each config watching this channel
           const targetConfigs = this.channelConfigs.get(channel);
@@ -395,7 +464,6 @@ class SocketService {
                 try {
                   await this.executeLiveStrategy(configId, registry.candles);
                 } catch (err) {
-                  // [CRITICAL-1] No more undefined `logger`
                   LoggerService.log(
                     "error",
                     `[Strategy] ${configId} Error: ${err.message}`,
@@ -890,7 +958,20 @@ console.log(positions,'positions=======')
             ? 1440
             : parseInt(intervalStr, 10) || 1;
 
-        const maxWaitMinutes = FVG_EXPIRY_CANDLES * intervalMinutes;
+        const cleanPairStr = (activeTrade.pair).toLowerCase();
+        console.log(cleanPairStr,'cleanPairStr====')
+        if(!cleanPairStr){
+          return await LoggerService.log(
+            "imp",
+            `NO FVG STRATEGY CONFIG FOR THIS PAIR ${activeTrade.pair}`,
+            "SocketService",
+            { configId, pair: activeTrade.pair || "" }
+          );
+        }
+        const strategyConfig = STRATEGY_CONFIGS[cleanPairStr];
+        const fvgExpiryCandles = strategyConfig.fvgExpiryCandles;
+
+        const maxWaitMinutes = fvgExpiryCandles * intervalMinutes;
         const entryTime = dayjs(activeTrade.entryTime);
         const now = dayjs();
         const minutesElapsed = now.diff(entryTime, "minute");
@@ -898,7 +979,7 @@ console.log(positions,'positions=======')
         if (minutesElapsed >= maxWaitMinutes) {
           await LoggerService.log(
             "imp",
-            `⏳ Limit order expired after ${FVG_EXPIRY_CANDLES} candles ` +
+            `⏳ Limit order expired after ${fvgExpiryCandles} candles ` +
               `(${maxWaitMinutes}m) for ${activeTrade.pair}. Cancelling...`,
             "SocketService",
             { configId, pair: activeTrade.pair || "" }
@@ -913,7 +994,7 @@ console.log(positions,'positions=======')
             status: "closed",
             exitPrice: tick.close,
             exitTime: now.tz("Asia/Kolkata").format(),
-            exitReason: `Expired/Missed (${FVG_EXPIRY_CANDLES} Candles)`,
+            exitReason: `Expired/Missed (${fvgExpiryCandles} Candles)`,
             profit: 0,
             fee: 0,
           };

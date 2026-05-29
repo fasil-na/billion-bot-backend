@@ -15,7 +15,8 @@ class TradeService {
     "B-BTC_USDT": { maxLeverage: 20, qtyStep: 1e-3, priceStep: 0.1, minNotional: 6 },
     "B-SUSHI_USDT": { maxLeverage: 10, qtyStep: 1, priceStep: 1e-4, minNotional: 6 },
     "B-XAU_USDT": { maxLeverage: 20, qtyStep: 0.01, priceStep: 0.01, minNotional: 6 },
-    "SUSHIUSDT": { maxLeverage: 10, qtyStep: 1, priceStep: 1e-4, minNotional: 6 }
+    "SUSHIUSDT": { maxLeverage: 10, qtyStep: 1, priceStep: 1e-4, minNotional: 6 },
+    "B-ETH_USDT": { maxLeverage: 20, qtyStep: 1e-3, priceStep: 0.01, minNotional: 6 },
   };
   static formatTradeParams(rawPair, rawQty, leverage, customTp = 0, customSl = 0, tradeDirection = "buy", entryPrice = 0, maxNotional = 1e6, riskAmount = 0) {
     const pair = formatPair(rawPair);
