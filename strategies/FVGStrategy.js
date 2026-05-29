@@ -234,7 +234,10 @@ export class FVGStrategy {
 
                     let entryCondition = false;
                     if (params.type === 'live_signal' && i === fvg.formedAt + 1) {
-                        entryCondition = true;
+                        // For a Buy Limit order to rest safely, current price MUST be above the limit price
+                        if (curr.open > midpoint) {
+                            entryCondition = true;
+                        }
                     } else {
                         entryCondition = (curr.low <= midpoint && curr.high >= midpoint);
                     }
@@ -330,7 +333,10 @@ export class FVGStrategy {
 
                     let entryCondition = false;
                     if (params.type === 'live_signal' && i === fvg.formedAt + 1) {
-                        entryCondition = true;
+                        // For a Sell Limit order to rest safely, current price MUST be below the limit price
+                        if (curr.open < midpoint) {
+                            entryCondition = true;
+                        }
                     } else {
                         entryCondition = (curr.high >= midpoint && curr.low <= midpoint);
                     }
