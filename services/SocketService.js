@@ -237,7 +237,7 @@ class SocketService {
   // SYNC HISTORY API (Polling for perfect parity)
   // ─────────────────────────────────────────────
   static async syncHistoricalCandles(channel, expectedClosedTime) {
-    const registry = this.pairCandleRegistry.get(channel) || this.marketRegistry.get(channel);
+    const registry = this.marketRegistry.get(channel);
     if (!registry) return;
 
     try {
