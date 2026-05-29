@@ -840,28 +840,26 @@ console.log(positions,'positions=======')
         return;
       }
 
-      // [CRITICAL-3] Write sentinel BEFORE exchange call, not after.
-      // If the process dies or DB fails after executeFutureOrder(), this sentinel
-      // prevents a second order from being placed on the next candle.
+      // Create the DB record FIRST so it has an _id. 
+      // This prevents _processPositionUpdate from creating a duplicate if it fires before we finish.
+      const initialTrade = await TradeHistoryService.saveTrade({
+        ...trade,
+        pair,
+        configId,
+        strategyId: config.strategyId,
+        status: "open",
+        type: "real",
+        leverage: config.leverage,
+        maxPositionSize: config.maxPositionSize,
+        entryTime: dayjs().tz("Asia/Kolkata").format(),
+      });
+
       this.updateState(configId, {
         isPlacingOrder: true,
-        activeTrade: {
-          ...trade,
-          pair,
-          configId,
-          strategyId: config.strategyId,
-          status: "open",
-          type: "real",
-          leverage: config.leverage,
-          maxPositionSize: config.maxPositionSize,
-          entryTime: dayjs().tz("Asia/Kolkata").format(),
-          _sentinel: true, // marks as unconfirmed — replaced by real saveTrade result
-        },
+        activeTrade: initialTrade,
       });
 
       try {
-     
-
         await TradeService.executeFutureOrder({
           ...trade,
           pair,
@@ -872,32 +870,18 @@ console.log(positions,'positions=======')
           client_order_id: `${configId}-${Date.now()}`,
         });
 
-        // Small delay to let exchange confirm
-        await new Promise((res) => setTimeout(res, 1500));
-
-        const savedTrade = await TradeHistoryService.saveTrade({
-          ...trade,
-          pair,
-          configId,
-          strategyId: config.strategyId,
-          status: "open",
-          type: "real",
-          leverage: config.leverage,
-          maxPositionSize: config.maxPositionSize,
-          entryTime: dayjs().tz("Asia/Kolkata").format(),
-        });
-
-        // Replace sentinel with confirmed saved trade
-        this.updateState(configId, { activeTrade: savedTrade, isPlacingOrder: false });
+        // Exchange confirmed the order placement.
+        // df-position-update will handle slippage sync and DB updates using the _id.
+        this.updateState(configId, { isPlacingOrder: false });
 
         await LoggerService.log(
           "success",
           `✅ REAL Position Opened for ${pair}`,
           "SocketService",
-          { configId, pair, metadata: savedTrade }
+          { configId, pair, metadata: initialTrade }
         );
 
-        this.io.emit("trade-history-update", savedTrade);
+        this.io.emit("trade-history-update", initialTrade);
       } catch (err) {
         await LoggerService.log(
           "error",
@@ -906,16 +890,14 @@ console.log(positions,'positions=======')
           { configId, pair }
         );
 
+        // Fetch the freshed trade state just in case
+        const freshState = this.getState(configId);
+        const tradeToCancel = freshState?.activeTrade || initialTrade;
+
         // Save the failed trade to the DB so you can see it in the UI
         const failedTrade = await TradeHistoryService.saveTrade({
-          ...trade,
-          pair,
-          configId,
-          strategyId: config.strategyId,
+          ...tradeToCancel,
           status: "cancelled",
-          type: "real",
-          leverage: config.leverage,
-          entryTime: dayjs().tz("Asia/Kolkata").format(),
           exitTime: dayjs().tz("Asia/Kolkata").format(),
           exitReason: `Failed: ${err.message}`, // Store the exact error
         });

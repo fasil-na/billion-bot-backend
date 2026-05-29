@@ -8,19 +8,29 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 export const STRATEGY_CONFIGS = {
     'b-btc_usdt': {
-        riskRewardRatio: 3.5,
-        fvgExpiryCandles: 4,
-        rangeLookback: 10,
-        minGapSizeRatio: 0.00005,
-        minC2BodyRatio: 0.001,
-        rsiPeriod: 14,
-        rsiBullishMin: 15,
-        rsiBullishMax: 75,
+        riskRewardRatio: 4.5,        // higher RR → compensate more SL hits
+
+        fvgExpiryCandles: 50,        // allow older FVGs (more trades)
+
+        rangeLookback: 5,            // smaller range → more signals
+
+        minGapSizeRatio: 0.00002,    // accept smaller gaps
+
+        minC2BodyRatio: 0.0006,      // weaker confirmation candle allowed
+
+        rsiPeriod: 12,               // faster RSI reaction
+
+        rsiBullishMin: 10,           // allow early entries
+        rsiBullishMax: 80,
+
         rsiBearishMin: 15,
-        rsiBearishMax: 75,
-        minRiskPerUnit: 35,
-        maxRiskPerUnit: 150,
-        bearishSlBufferRatio: 0.001,
+        rsiBearishMax: 85,
+
+        minRiskPerUnit: 3,           // allow smaller moves
+        maxRiskPerUnit: 200,         // allow bigger volatility trades
+
+        bearishSlBufferRatio: 0.0007, // tighter SL → more trades, more SL hits
+
         initialBalance: 5
     },
     'b-eth_usdt': {

@@ -11,12 +11,12 @@ export class LoggerService {
       this.broadcaster({ level, message, context, data, timestamp: new Date() });
     }
 
-    if (level === 'error' || level === 'imp') {
+    // if (level === 'error' || level === 'imp') {
       try {
         await SystemLog.create({ level, message, context, data });
       } catch (err) {
         console.error("Failed to save error log to DB:", err.message);
       }
     }
-  }
+  // }
 }
