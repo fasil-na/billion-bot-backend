@@ -197,7 +197,6 @@ export class FVGStrategy {
                 if (!fvg) continue;
 
                 if (i <= fvg.formedAt) continue;
-                if (params.type === 'live_signal' && i !== candles.length - 1) continue;
 
                 if (i - fvg.formedAt > fvgExpiryCandles) {
                     fvg.filled = true;
@@ -221,7 +220,7 @@ export class FVGStrategy {
                         continue;
                     }
 
-                    const entryCondition = params.type === 'live_signal' ? true : (curr.low <= midpoint && curr.high >= midpoint);
+                    const entryCondition = (curr.low <= midpoint && curr.high >= midpoint);
                     if (entryCondition) {
                         if (curr.time < simulationStart) {
                             fvg.filled = true;
@@ -312,7 +311,7 @@ export class FVGStrategy {
                         continue;
                     }
 
-                    const entryCondition = params.type === 'live_signal' ? true : (curr.high >= midpoint && curr.low <= midpoint);
+                    const entryCondition = (curr.high >= midpoint && curr.low <= midpoint);
                     if (entryCondition) {
                         if (curr.time < simulationStart) {
                             fvg.filled = true;
