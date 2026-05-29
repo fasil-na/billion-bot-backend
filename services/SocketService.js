@@ -450,15 +450,6 @@ class SocketService {
           registry.candleIndexMap.set(data.time, registry.candles.length);
           registry.candles.push(data);
 
-          if (isNewCandleTrigger) {
-              // Await the history sync so our strategy uses official History API data for the closed candles!
-              const resMs = parseInt(channel.match(/_(\d+[A-Za-z]+)-futures/)?.[1] || "15") * 60 * 1000;
-              const expectedClosedTime = data.time - resMs;
-              await this.syncHistoricalCandles(channel, expectedClosedTime);
-          }
-
-
-          // Fire strategy for each config watching this channel
           const targetConfigs = this.channelConfigs.get(channel);
      
           if (targetConfigs && isNewCandleTrigger) {
@@ -493,6 +484,17 @@ class SocketService {
                 }
               });
             }
+          }
+
+          if (isNewCandleTrigger) {
+              // Await the history sync AFTER strategy execution.
+              // This guarantees lightning-fast execution using websocket data, 
+              // while keeping historical indicators perfectly aligned for future candles.
+              const resMs = parseInt(channel.match(/_(\d+[A-Za-z]+)-futures/)?.[1] || "15") * 60 * 1000;
+              const expectedClosedTime = data.time - resMs;
+              this.syncHistoricalCandles(channel, expectedClosedTime).catch(err => {
+                 LoggerService.log("error", `Background sync failed: ${err.message}`, "SocketService");
+              });
           }
         }
 
