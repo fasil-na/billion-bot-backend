@@ -197,7 +197,6 @@ export class FVGStrategy {
                 if (!fvg) continue;
 
                 if (i <= fvg.formedAt) continue;
-                if (params.type === 'live_signal' && i !== candles.length - 1) continue;
 
                 if (i - fvg.formedAt > fvgExpiryCandles) {
                     fvg.filled = true;
@@ -221,8 +220,9 @@ export class FVGStrategy {
                         continue;
                     }
 
-                    const entryCondition = params.type === 'live_signal' ? true : (curr.low <= midpoint && curr.high >= midpoint);
-                    if (entryCondition) {
+                    const entryCondition = (curr.low <= midpoint && curr.high >= midpoint);
+                    const liveTrigger = params.type === 'live_signal' && i === candles.length - 1;
+                    if (entryCondition || liveTrigger) {
                         if (curr.time < simulationStart) {
                             fvg.filled = true;
                             fvg.filledAt = curr.time;
@@ -235,10 +235,12 @@ export class FVGStrategy {
                         const riskPerUnit = Math.abs(midpoint - (fvg.bottom - buffer));
 
                         if (riskPerUnit < minRiskPerUnit || riskPerUnit > maxRiskPerUnit) {
-                            fvg.filled = true;
-                            fvg.filledAt = curr.time;
-                            activeFVGs.splice(j, 1);
-                            j--;
+                            if (entryCondition) {
+                                fvg.filled = true;
+                                fvg.filledAt = curr.time;
+                                activeFVGs.splice(j, 1);
+                                j--;
+                            }
                             continue;
                         }
 
@@ -251,10 +253,12 @@ export class FVGStrategy {
 
                         const minQty = Math.ceil((staticData.minNotional / midpoint) / staticData.qtyStep) * staticData.qtyStep;
                         if (units < minQty || units <= 0) {
-                            fvg.filled = true;
-                            fvg.filledAt = curr.time;
-                            activeFVGs.splice(j, 1);
-                            j--;
+                            if (entryCondition) {
+                                fvg.filled = true;
+                                fvg.filledAt = curr.time;
+                                activeFVGs.splice(j, 1);
+                                j--;
+                            }
                             continue;
                         }
 
@@ -274,6 +278,10 @@ export class FVGStrategy {
                             profit: 0,
                             indicators: { fvgTop: fvg.top, fvgBottom: fvg.bottom }
                         };
+
+                        if (params.type === 'live_signal' && i === candles.length - 1) {
+                            break;
+                        }
 
                         const exitInfo = this.checkIntraCandleExit(activeTrade, curr, subCandles);
                         if (exitInfo) {
@@ -312,8 +320,9 @@ export class FVGStrategy {
                         continue;
                     }
 
-                    const entryCondition = params.type === 'live_signal' ? true : (curr.high >= midpoint && curr.low <= midpoint);
-                    if (entryCondition) {
+                    const entryCondition = (curr.high >= midpoint && curr.low <= midpoint);
+                    const liveTrigger = params.type === 'live_signal' && i === candles.length - 1;
+                    if (entryCondition || liveTrigger) {
                         if (curr.time < simulationStart) {
                             fvg.filled = true;
                             fvg.filledAt = curr.time;
@@ -327,10 +336,12 @@ export class FVGStrategy {
                         const riskPerUnit = Math.abs((fvg.top + buffer) - midpoint);
 
                         if (riskPerUnit < minRiskPerUnit || riskPerUnit > maxRiskPerUnit) {
-                            fvg.filled = true;
-                            fvg.filledAt = curr.time;
-                            activeFVGs.splice(j, 1);
-                            j--;
+                            if (entryCondition) {
+                                fvg.filled = true;
+                                fvg.filledAt = curr.time;
+                                activeFVGs.splice(j, 1);
+                                j--;
+                            }
                             continue;
                         }
 
@@ -342,10 +353,12 @@ export class FVGStrategy {
 
                         const minQty = Math.ceil((staticData.minNotional / midpoint) / staticData.qtyStep) * staticData.qtyStep;
                         if (units < minQty || units <= 0) {
-                            fvg.filled = true;
-                            fvg.filledAt = curr.time;
-                            activeFVGs.splice(j, 1);
-                            j--;
+                            if (entryCondition) {
+                                fvg.filled = true;
+                                fvg.filledAt = curr.time;
+                                activeFVGs.splice(j, 1);
+                                j--;
+                            }
                             continue;
                         }
 
@@ -365,6 +378,10 @@ export class FVGStrategy {
                             profit: 0,
                             indicators: { fvgTop: fvg.top, fvgBottom: fvg.bottom }
                         };
+
+                        if (params.type === 'live_signal' && i === candles.length - 1) {
+                            break;
+                        }
 
                         const exitInfo = this.checkIntraCandleExit(activeTrade, curr, subCandles);
                         if (exitInfo) {
