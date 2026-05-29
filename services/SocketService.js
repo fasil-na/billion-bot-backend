@@ -792,9 +792,9 @@ console.log(positions,'positions=======')
 
         console.log(`[Strategy] 🔍 Scanning ${pair} for '${config.strategyId}' signal...`);
 
-        const result = strategy.run(candles, {
+        const result = strategy.checkSignal(candles, {
           pair,
-          type: "live",
+          type: "live_signal",
           riskAmount: config.riskAmount || 0.05,
           leverage: config.leverage || 20,
           maxPositionSize: config.maxPositionSize || 85,

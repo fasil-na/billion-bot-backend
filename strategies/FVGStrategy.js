@@ -196,11 +196,8 @@ export class FVGStrategy {
                 const fvg = activeFVGs[j];
                 if (!fvg) continue;
 
-                if (params.type === 'live_signal') {
-                    if (i !== candles.length - 1 || i !== fvg.formedAt) continue;
-                } else {
-                    if (i <= fvg.formedAt) continue;
-                }
+                if (i <= fvg.formedAt) continue;
+                if (params.type === 'live_signal' && i !== candles.length - 1) continue;
 
                 if (i - fvg.formedAt > fvgExpiryCandles) {
                     fvg.filled = true;
