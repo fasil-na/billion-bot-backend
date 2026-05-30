@@ -9,24 +9,49 @@ dayjs.extend(timezone);
 export const STRATEGY_CONFIGS = {
     'b-btc_usdt':
 
-    {
-        riskRewardRatio: 1.8,
-        fvgExpiryCandles: 20,
-        rangeLookback: 10,
-        minGapSizeRatio: 0.0008,
-        minC2BodyRatio: 0.001,
-        rsiPeriod: 14,
-        rsiBullishMin: 0,
-        rsiBullishMax: 100,
-        rsiBearishMin: 0,
-        rsiBearishMax: 100,
-        minRiskPerUnit: 60,
-        maxRiskPerUnit: 200,
-        bearishSlBufferRatio: 0.001,
-        initialBalance: 1000
+    // {
+    //     riskRewardRatio: 1.8,
+    //     fvgExpiryCandles: 20,
+    //     rangeLookback: 10,
+    //     minGapSizeRatio: 0.0008,
+    //     minC2BodyRatio: 0.001,
+    //     rsiPeriod: 14,
+    //     rsiBullishMin: 0,
+    //     rsiBullishMax: 100,
+    //     rsiBearishMin: 0,
+    //     rsiBearishMax: 100,
+    //     minRiskPerUnit: 60,
+    //     maxRiskPerUnit: 200,
+    //     bearishSlBufferRatio: 0.001,
+    //     initialBalance: 1000
+    // },
+
+ {
+        riskRewardRatio: 4.5,        // higher RR → compensate more SL hits
+
+        fvgExpiryCandles: 50,        // allow older FVGs (more trades)
+
+        rangeLookback: 5,            // smaller range → more signals
+
+        minGapSizeRatio: 0.00002,    // accept smaller gaps
+
+        minC2BodyRatio: 0.0006,      // weaker confirmation candle allowed
+
+        rsiPeriod: 12,               // faster RSI reaction
+
+        rsiBullishMin: 10,           // allow early entries
+        rsiBullishMax: 80,
+
+        rsiBearishMin: 15,
+        rsiBearishMax: 85,
+
+        minRiskPerUnit: 3,           // allow smaller moves
+        maxRiskPerUnit: 200,         // allow bigger volatility trades
+
+        bearishSlBufferRatio: 0.0007, // tighter SL → more trades, more SL hits
+
+        initialBalance: 5
     },
-
-
 
     'b-eth_usdt': {
         riskRewardRatio: 1.5,
@@ -120,6 +145,7 @@ export class FVGStrategy {
                             direction: "bullish",
                             formedAt: i,
                             filled: false,
+                            status: "waiting",
                             startTime: c1.time,
                             endTime: c3.time
                         };
@@ -128,6 +154,7 @@ export class FVGStrategy {
                         activeFVGs.forEach(oldFvg => {
                             oldFvg.filled = true;
                             oldFvg.filledAt = c3.time;
+                            oldFvg.status = "cancelled";
                         });
                         activeFVGs = [fvg];
 
@@ -147,6 +174,7 @@ export class FVGStrategy {
                             direction: "bearish",
                             formedAt: i,
                             filled: false,
+                            status: "waiting",
                             startTime: c1.time,
                             endTime: c3.time
                         };
@@ -155,6 +183,7 @@ export class FVGStrategy {
                         activeFVGs.forEach(oldFvg => {
                             oldFvg.filled = true;
                             oldFvg.filledAt = c3.time;
+                            oldFvg.status = "cancelled";
                         });
                         activeFVGs = [fvg];
 
@@ -248,12 +277,13 @@ export class FVGStrategy {
                         entryCondition = true;
                         isPendingEntry = true;
                     } else {
-                        entryCondition = (curr.low <= midpoint && curr.high >= midpoint);
+                        entryCondition = (curr.low <= midpoint);
                     }
                     if (entryCondition) {
                         if (curr.time < simulationStart) {
                             fvg.filled = true;
                             fvg.filledAt = curr.time;
+                            fvg.status = "skipped";
                             activeFVGs.splice(j, 1);
                             j--;
                             continue;
@@ -265,6 +295,7 @@ export class FVGStrategy {
                         if (riskPerUnit < minRiskPerUnit || riskPerUnit > maxRiskPerUnit) {
                             fvg.filled = true;
                             fvg.filledAt = curr.time;
+                            fvg.status = "skipped";
                             activeFVGs.splice(j, 1);
                             j--;
                             continue;
@@ -281,6 +312,7 @@ export class FVGStrategy {
                         if (units < minQty || units <= 0) {
                             fvg.filled = true;
                             fvg.filledAt = curr.time;
+                            fvg.status = "skipped";
                             activeFVGs.splice(j, 1);
                             j--;
                             continue;
@@ -327,6 +359,7 @@ export class FVGStrategy {
 
                         fvg.filled = true;
                         fvg.filledAt = curr.time;
+                        fvg.status = "trade_executed";
                         activeFVGs.splice(j, 1);
                         break;
                     }
@@ -334,6 +367,7 @@ export class FVGStrategy {
                     if (curr.low < fvg.bottom) {
                         fvg.filled = true;
                         fvg.filledAt = curr.time;
+                        fvg.status = "trade_executed";
                         activeFVGs.splice(j, 1);
                         j--;
                         continue;
@@ -348,12 +382,13 @@ export class FVGStrategy {
                         entryCondition = true;
                         isPendingEntry = true;
                     } else {
-                        entryCondition = (curr.high >= midpoint && curr.low <= midpoint);
+                        entryCondition = (curr.high >= midpoint);
                     }
                     if (entryCondition) {
                         if (curr.time < simulationStart) {
                             fvg.filled = true;
                             fvg.filledAt = curr.time;
+                            fvg.status = "skipped";
                             activeFVGs.splice(j, 1);
                             j--;
                             continue;
@@ -366,6 +401,7 @@ export class FVGStrategy {
                         if (riskPerUnit < minRiskPerUnit || riskPerUnit > maxRiskPerUnit) {
                             fvg.filled = true;
                             fvg.filledAt = curr.time;
+                            fvg.status = "skipped";
                             activeFVGs.splice(j, 1);
                             j--;
                             continue;
@@ -382,6 +418,7 @@ export class FVGStrategy {
                         if (units < minQty || units <= 0) {
                             fvg.filled = true;
                             fvg.filledAt = curr.time;
+                            fvg.status = "skipped";
                             activeFVGs.splice(j, 1);
                             j--;
                             continue;
@@ -428,6 +465,7 @@ export class FVGStrategy {
 
                         fvg.filled = true;
                         fvg.filledAt = curr.time;
+                        fvg.status = "trade_executed";
                         activeFVGs.splice(j, 1);
                         break;
                     }
@@ -435,6 +473,7 @@ export class FVGStrategy {
                     if (curr.high > fvg.top) {
                         fvg.filled = true;
                         fvg.filledAt = curr.time;
+                        fvg.status = "trade_executed";
                         activeFVGs.splice(j, 1);
                         j--;
                         continue;
@@ -521,7 +560,7 @@ export class FVGStrategy {
         const result = this.run(candles, { ...params, type: 'live_signal' });
 
         if (!result.trade) {
-            return { matched: false };
+            return { matched: false, fvgs: result.activeFVGs || [] };
         }
 
         // Live bot trigger safety: 

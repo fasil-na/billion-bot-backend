@@ -846,6 +846,23 @@ console.log(positions,'positions=======')
              this.updateState(configId, { lastSignalTime: latestCandle.time });
              await this.handleOrderEntry(configId, result.trade);
           }
+        } else if (state.activeTrade && state.activeTrade.status === "open") {
+          // If the strategy cancelled the FVG but failed to generate a replacement trade
+          const isPending = !state.currentPosition || state.currentPosition.active_pos === 0;
+          
+          if (isPending && result.fvgs && result.fvgs.length === 0) {
+             await LoggerService.log("imp", `🚨 FVG invalidated by strategy. Cancelling stale Limit Order.`, "SocketService", { configId, pair });
+             if (state.config.autoTrade) {
+                 await TradeService.cancelAllOrders(pair);
+             }
+             await TradeHistoryService.saveTrade({
+                 ...state.activeTrade,
+                 status: "cancelled",
+                 exitReason: "FVG Cancelled (No Replacement)"
+             });
+             this.io.emit("trade-history-update", { ...state.activeTrade, status: "cancelled", exitReason: "FVG Cancelled (No Replacement)" });
+             this.updateState(configId, { activeTrade: null, lastSignalTime: latestCandle.time });
+          }
         }
       } finally {
         this.globalPairLocks.delete(pair);
