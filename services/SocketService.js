@@ -604,13 +604,12 @@ console.log(positions,'positions=======')
       // Sync slippage — entry price, SL, TP changes from exchange
       if (
         state.activeTrade &&
-        state.activeTrade.status === "open" &&
+        (state.activeTrade.status === "open" || state.activeTrade.status === "pending") &&
         state.activeTrade.type === "real"
       ) {
         const exchangeSL = pos.stop_loss_trigger || 0;
         const exchangeTP = pos.take_profit_trigger || 0;
 
-        // [SYNC-2] Decouple price guard from SL/TP sync
         const priceChanged =
           pos.avg_price > 0 &&
           state.activeTrade.actualEntryPrice !== pos.avg_price;
@@ -618,10 +617,12 @@ console.log(positions,'positions=======')
           exchangeSL > 0 && state.activeTrade.actualSl !== exchangeSL;
         const tpChanged =
           exchangeTP > 0 && state.activeTrade.actualTp !== exchangeTP;
+        const statusChanged = state.activeTrade.status === "pending";
 
-        if (priceChanged || slChanged || tpChanged) {
+        if (priceChanged || slChanged || tpChanged || statusChanged) {
           const updatedTrade = {
             ...state.activeTrade,
+            ...(statusChanged && { status: "open" }),
             ...(priceChanged && { actualEntryPrice: pos.avg_price }),
             ...(slChanged && { actualSl: exchangeSL }),
             ...(tpChanged && { actualTp: exchangeTP }),
@@ -820,6 +821,11 @@ console.log(positions,'positions=======')
              const isDifferent = Math.abs(state.activeTrade.entryPrice - result.trade.entryPrice) > 0.0001;
              
              if (isDifferent) {
+                if (state.activeTrade.status !== "pending") {
+                    await LoggerService.log("warn", `🚨 New FVG detected but old order is already active (${state.activeTrade.status}) for ${pair}. Ignoring new signal to prevent double execution.`, "SocketService", { configId, pair });
+                    return;
+                }
+
                 await LoggerService.log("imp", `🚨 New FVG detected for ${pair}! Cancelling stale Limit Order and replacing.`, "SocketService", { configId, pair });
                 
                 // Cancel the old order on the exchange
@@ -885,7 +891,7 @@ console.log(positions,'positions=======')
         pair,
         configId,
         strategyId: config.strategyId,
-        status: "open",
+        status: "pending",
         type: "real",
         leverage: config.leverage,
         maxPositionSize: config.maxPositionSize,
@@ -985,7 +991,7 @@ console.log(positions,'positions=======')
       if (!state) return;
 
       const activeTrade = state.activeTrade;
-      if (!activeTrade || activeTrade.status !== "open") return;
+      if (!activeTrade || (activeTrade.status !== "open" && activeTrade.status !== "pending")) return;
 
       // Real trade with no confirmed position yet — check for limit order expiry
       if (activeTrade.type === "real" && !state.currentPosition) {

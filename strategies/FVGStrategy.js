@@ -9,21 +9,47 @@ dayjs.extend(timezone);
 export const STRATEGY_CONFIGS = {
     'b-btc_usdt':
 
-    {
-        riskRewardRatio: 1.8,
-        fvgExpiryCandles: 20,
-        rangeLookback: 10,
-        minGapSizeRatio: 0.0008,
-        minC2BodyRatio: 0.001,
-        rsiPeriod: 14,
-        rsiBullishMin: 0,
-        rsiBullishMax: 100,
-        rsiBearishMin: 0,
-        rsiBearishMax: 100,
-        minRiskPerUnit: 60,
-        maxRiskPerUnit: 200,
-        bearishSlBufferRatio: 0.001,
-        initialBalance: 1000
+    // {
+    //     riskRewardRatio: 1.8,
+    //     fvgExpiryCandles: 20,
+    //     rangeLookback: 10,
+    //     minGapSizeRatio: 0.0008,
+    //     minC2BodyRatio: 0.001,
+    //     rsiPeriod: 14,
+    //     rsiBullishMin: 0,
+    //     rsiBullishMax: 100,
+    //     rsiBearishMin: 0,
+    //     rsiBearishMax: 100,
+    //     minRiskPerUnit: 60,
+    //     maxRiskPerUnit: 200,
+    //     bearishSlBufferRatio: 0.001,
+    //     initialBalance: 1000
+    // },
+{
+        riskRewardRatio: 4.5,        // higher RR → compensate more SL hits
+
+        fvgExpiryCandles: 50,        // allow older FVGs (more trades)
+
+        rangeLookback: 5,            // smaller range → more signals
+
+        minGapSizeRatio: 0.00002,    // accept smaller gaps
+
+        minC2BodyRatio: 0.0006,      // weaker confirmation candle allowed
+
+        rsiPeriod: 12,               // faster RSI reaction
+
+        rsiBullishMin: 10,           // allow early entries
+        rsiBullishMax: 80,
+
+        rsiBearishMin: 15,
+        rsiBearishMax: 85,
+
+        minRiskPerUnit: 10,           // allow smaller moves
+        maxRiskPerUnit: 200,         // allow bigger volatility trades
+
+        bearishSlBufferRatio: 0.0007, // tighter SL → more trades, more SL hits
+
+        initialBalance: 5
     },
 
 
@@ -248,7 +274,7 @@ export class FVGStrategy {
                         entryCondition = true;
                         isPendingEntry = true;
                     } else {
-                        entryCondition = (curr.low <= midpoint && curr.high >= midpoint);
+                        entryCondition = (curr.low <= midpoint);
                     }
                     if (entryCondition) {
                         if (curr.time < simulationStart) {
@@ -348,7 +374,7 @@ export class FVGStrategy {
                         entryCondition = true;
                         isPendingEntry = true;
                     } else {
-                        entryCondition = (curr.high >= midpoint && curr.low <= midpoint);
+                        entryCondition = (curr.high >= midpoint);
                     }
                     if (entryCondition) {
                         if (curr.time < simulationStart) {
