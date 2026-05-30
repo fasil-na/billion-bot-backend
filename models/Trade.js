@@ -6,7 +6,7 @@ const TradeSchema = new mongoose.Schema({
   strategyId: { type: String, required: true },
   direction: { type: String, enum: ['buy', 'sell'] },
   type: { type: String, enum: ['real', 'paper'], default: 'paper' },
-  status: { type: String, enum: ['open', 'closed', 'cancelled'], default: 'open' },
+  status: { type: String, enum: ['open', 'closed', 'cancelled', 'pending'], default: 'open' },
   entryPrice: { type: Number },
   exitPrice: { type: Number },
   sl: { type: Number },

@@ -11,6 +11,6 @@ export class TradeHistoryService {
   }
 
   static async getActiveTradeByPair(pair) {
-    return await Trade.findOne({ pair, status: 'open' }).lean();
+    return await Trade.findOne({ pair, status: { $in: ['open', 'pending'] } }).lean();
   }
 }
