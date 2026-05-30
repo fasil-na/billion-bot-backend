@@ -825,7 +825,8 @@ console.log(positions,'positions=======')
                 }
                 
                 // Mark the old trade as cancelled in DB
-                await TradeHistoryService.updateTrade(state.activeTrade._id, {
+                await TradeHistoryService.saveTrade({
+                    ...state.activeTrade,
                     status: "cancelled",
                     exitReason: "New FVG Formed (Replaced)"
                 });
