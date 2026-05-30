@@ -7,7 +7,9 @@ import { TradeService } from '../services/TradeService.js';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 export const STRATEGY_CONFIGS = {
-    'b-btc_usdt': {
+    'b-btc_usdt': 
+    
+    {
         riskRewardRatio: 4.5,        // higher RR → compensate more SL hits
 
         fvgExpiryCandles: 50,        // allow older FVGs (more trades)
@@ -32,7 +34,10 @@ export const STRATEGY_CONFIGS = {
         bearishSlBufferRatio: 0.0007, // tighter SL → more trades, more SL hits
 
         initialBalance: 5
-    },
+    }
+    
+    
+    ,
     'b-eth_usdt': {
         riskRewardRatio: 4.8,
         fvgExpiryCandles: 9,
