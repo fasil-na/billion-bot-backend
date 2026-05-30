@@ -7,37 +7,27 @@ import { TradeService } from '../services/TradeService.js';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 export const STRATEGY_CONFIGS = {
-    'b-btc_usdt': 
-    
+    'b-btc_usdt':
+
     {
-        riskRewardRatio: 4.5,        // higher RR → compensate more SL hits
-
-        fvgExpiryCandles: 50,        // allow older FVGs (more trades)
-
-        rangeLookback: 5,            // smaller range → more signals
-
-        minGapSizeRatio: 0.00002,    // accept smaller gaps
-
-        minC2BodyRatio: 0.0006,      // weaker confirmation candle allowed
-
-        rsiPeriod: 12,               // faster RSI reaction
-
-        rsiBullishMin: 10,           // allow early entries
-        rsiBullishMax: 80,
-
+        riskRewardRatio: 3.5,
+        fvgExpiryCandles: 4,
+        rangeLookback: 10,
+        minGapSizeRatio: 0.00005,
+        minC2BodyRatio: 0.001,
+        rsiPeriod: 14,
+        rsiBullishMin: 15,
+        rsiBullishMax: 75,
         rsiBearishMin: 15,
-        rsiBearishMax: 85,
-
-        minRiskPerUnit: 3,           // allow smaller moves
-        maxRiskPerUnit: 200,         // allow bigger volatility trades
-
-        bearishSlBufferRatio: 0.0007, // tighter SL → more trades, more SL hits
-
+        rsiBearishMax: 75,
+        minRiskPerUnit: 35,
+        maxRiskPerUnit: 150,
+        bearishSlBufferRatio: 0.001,
         initialBalance: 5
-    }
-    
-    
-    ,
+    },
+
+
+
     'b-eth_usdt': {
         riskRewardRatio: 4.8,
         fvgExpiryCandles: 9,
@@ -131,7 +121,7 @@ export class FVGStrategy {
                         endTime: c3.time
                     };
                     allFVGs.push(fvg);
-                    
+
                     // Option B: Invalidate any old FVGs and only track this new one
                     activeFVGs.forEach(oldFvg => {
                         oldFvg.filled = true;
@@ -156,7 +146,7 @@ export class FVGStrategy {
                         endTime: c3.time
                     };
                     allFVGs.push(fvg);
-                    
+
                     // Option B: Invalidate any old FVGs and only track this new one
                     activeFVGs.forEach(oldFvg => {
                         oldFvg.filled = true;
@@ -186,39 +176,39 @@ export class FVGStrategy {
                     const hitTP = isBuy ? curr.high >= (activeTrade.tp || Infinity) : curr.low <= (activeTrade.tp || 0);
 
                     if (hitSL || hitTP) {
-                    activeTrade.status = "closed";
-                    activeTrade.exitTime = dayjs(curr.time).tz(TRADE_TIMEZONE).format();
+                        activeTrade.status = "closed";
+                        activeTrade.exitTime = dayjs(curr.time).tz(TRADE_TIMEZONE).format();
 
-                    if (hitSL) {
-                        activeTrade.exitPrice = activeTrade.sl || (isBuy ? curr.low : curr.high);
-                        activeTrade.exitReason = "Stop Loss";
-                    } else if (hitTP) {
-                        activeTrade.exitPrice = activeTrade.tp || (isBuy ? curr.high : curr.low);
-                        activeTrade.exitReason = "Take Profit";
+                        if (hitSL) {
+                            activeTrade.exitPrice = activeTrade.sl || (isBuy ? curr.low : curr.high);
+                            activeTrade.exitReason = "Stop Loss";
+                        } else if (hitTP) {
+                            activeTrade.exitPrice = activeTrade.tp || (isBuy ? curr.high : curr.low);
+                            activeTrade.exitReason = "Take Profit";
+                        }
+
+                        const units = activeTrade.units || 0;
+                        let grossProfit = 0;
+                        if (isBuy) {
+                            grossProfit = (activeTrade.exitPrice - activeTrade.entryPrice) * units;
+                        } else {
+                            grossProfit = (activeTrade.entryPrice - activeTrade.exitPrice) * units;
+                        }
+
+                        const entryFee = Math.ceil(activeTrade.entryPrice * units * MAKER_FEE_RATE * 1000) / 1000;
+                        const exitFee = Math.ceil(activeTrade.exitPrice * units * TAKER_FEE_RATE * 1000) / 1000;
+
+                        activeTrade.grossProfit = Number(grossProfit.toFixed(3));
+                        activeTrade.entryFee = entryFee;
+                        activeTrade.exitFee = exitFee;
+                        activeTrade.fee = entryFee + exitFee;
+                        activeTrade.profit = grossProfit - entryFee - exitFee;
+                        activeTrade.pnlPercent = (activeTrade.profit / balance) * 100;
+                        balance += activeTrade.profit;
+                        trades.push({ ...activeTrade });
+                        activeTrade = null;
+                        lastExitIndex = i;
                     }
-
-                    const units = activeTrade.units || 0;
-                    let grossProfit = 0;
-                    if (isBuy) {
-                        grossProfit = (activeTrade.exitPrice - activeTrade.entryPrice) * units;
-                    } else {
-                        grossProfit = (activeTrade.entryPrice - activeTrade.exitPrice) * units;
-                    }
-
-                    const entryFee = Math.ceil(activeTrade.entryPrice * units * MAKER_FEE_RATE * 1000) / 1000;
-                    const exitFee = Math.ceil(activeTrade.exitPrice * units * TAKER_FEE_RATE * 1000) / 1000;
-
-                    activeTrade.grossProfit = Number(grossProfit.toFixed(3));
-                    activeTrade.entryFee = entryFee;
-                    activeTrade.exitFee = exitFee;
-                    activeTrade.fee = entryFee + exitFee;
-                    activeTrade.profit = grossProfit - entryFee - exitFee;
-                    activeTrade.pnlPercent = (activeTrade.profit / balance) * 100;
-                    balance += activeTrade.profit;
-                    trades.push({ ...activeTrade });
-                    activeTrade = null;
-                    lastExitIndex = i;
-                }
                 }
             }
 
@@ -246,14 +236,6 @@ export class FVGStrategy {
                 if (fvg.direction === "bullish") {
                     const formedRSI = rsiValues[fvg.formedAt] || 50;
                     if (formedRSI <= rsiBullishMin || formedRSI >= rsiBullishMax) continue;
-
-                    if (curr.low < fvg.bottom) {
-                        fvg.filled = true;
-                        fvg.filledAt = curr.time;
-                        activeFVGs.splice(j, 1);
-                        j--;
-                        continue;
-                    }
 
                     let entryCondition = false;
                     let isPendingEntry = false;
@@ -319,23 +301,23 @@ export class FVGStrategy {
                         if (activeTrade.status === "open") {
                             const exitInfo = this.checkIntraCandleExit(activeTrade, curr, subCandles);
                             if (exitInfo) {
-                            activeTrade.status = "closed";
-                            activeTrade.exitPrice = exitInfo.price;
-                            activeTrade.exitTime = exitInfo.time;
-                            activeTrade.exitReason = exitInfo.reason;
-                            const pnlResult = this.calculatePnL(activeTrade, activeTrade.exitPrice, balance);
+                                activeTrade.status = "closed";
+                                activeTrade.exitPrice = exitInfo.price;
+                                activeTrade.exitTime = exitInfo.time;
+                                activeTrade.exitReason = exitInfo.reason;
+                                const pnlResult = this.calculatePnL(activeTrade, activeTrade.exitPrice, balance);
 
-                            activeTrade.grossProfit = Number(pnlResult.grossProfit.toFixed(4));
-                            activeTrade.entryFee = pnlResult.entryFee;
-                            activeTrade.exitFee = pnlResult.exitFee;
-                            activeTrade.fee = pnlResult.fee;
-                            activeTrade.profit = pnlResult.profit;
-                            activeTrade.pnlPercent = (pnlResult.profit / balance) * 100;
-                            balance += pnlResult.profit;
-                            trades.push({ ...activeTrade });
-                            activeTrade = null;
-                            lastExitIndex = i;
-                        }
+                                activeTrade.grossProfit = Number(pnlResult.grossProfit.toFixed(4));
+                                activeTrade.entryFee = pnlResult.entryFee;
+                                activeTrade.exitFee = pnlResult.exitFee;
+                                activeTrade.fee = pnlResult.fee;
+                                activeTrade.profit = pnlResult.profit;
+                                activeTrade.pnlPercent = (pnlResult.profit / balance) * 100;
+                                balance += pnlResult.profit;
+                                trades.push({ ...activeTrade });
+                                activeTrade = null;
+                                lastExitIndex = i;
+                            }
                         }
 
                         fvg.filled = true;
@@ -343,17 +325,17 @@ export class FVGStrategy {
                         activeFVGs.splice(j, 1);
                         break;
                     }
-                } else {
-                    const formedRSI = rsiValues[fvg.formedAt] || 50;
-                    if (formedRSI >= rsiBearishMax || formedRSI <= rsiBearishMin) continue;
 
-                    if (curr.high > fvg.top) {
+                    if (curr.low < fvg.bottom) {
                         fvg.filled = true;
                         fvg.filledAt = curr.time;
                         activeFVGs.splice(j, 1);
                         j--;
                         continue;
                     }
+                } else {
+                    const formedRSI = rsiValues[fvg.formedAt] || 50;
+                    if (formedRSI >= rsiBearishMax || formedRSI <= rsiBearishMin) continue;
 
                     let entryCondition = false;
                     let isPendingEntry = false;
@@ -419,29 +401,37 @@ export class FVGStrategy {
                         if (activeTrade.status === "open") {
                             const exitInfo = this.checkIntraCandleExit(activeTrade, curr, subCandles);
                             if (exitInfo) {
-                            activeTrade.status = "closed";
-                            activeTrade.exitPrice = exitInfo.price;
-                            activeTrade.exitTime = exitInfo.time;
-                            activeTrade.exitReason = exitInfo.reason;
-                            const pnlResult = this.calculatePnL(activeTrade, activeTrade.exitPrice, balance);
+                                activeTrade.status = "closed";
+                                activeTrade.exitPrice = exitInfo.price;
+                                activeTrade.exitTime = exitInfo.time;
+                                activeTrade.exitReason = exitInfo.reason;
+                                const pnlResult = this.calculatePnL(activeTrade, activeTrade.exitPrice, balance);
 
-                            activeTrade.grossProfit = Number(pnlResult.grossProfit.toFixed(4));
-                            activeTrade.entryFee = pnlResult.entryFee;
-                            activeTrade.exitFee = pnlResult.exitFee;
-                            activeTrade.fee = pnlResult.fee;
-                            activeTrade.profit = pnlResult.profit;
-                            activeTrade.pnlPercent = (pnlResult.profit / balance) * 100;
-                            balance += pnlResult.profit;
-                            trades.push({ ...activeTrade });
-                            activeTrade = null;
-                            lastExitIndex = i;
-                        }
+                                activeTrade.grossProfit = Number(pnlResult.grossProfit.toFixed(4));
+                                activeTrade.entryFee = pnlResult.entryFee;
+                                activeTrade.exitFee = pnlResult.exitFee;
+                                activeTrade.fee = pnlResult.fee;
+                                activeTrade.profit = pnlResult.profit;
+                                activeTrade.pnlPercent = (pnlResult.profit / balance) * 100;
+                                balance += pnlResult.profit;
+                                trades.push({ ...activeTrade });
+                                activeTrade = null;
+                                lastExitIndex = i;
+                            }
                         }
 
                         fvg.filled = true;
                         fvg.filledAt = curr.time;
                         activeFVGs.splice(j, 1);
                         break;
+                    }
+
+                    if (curr.high > fvg.top) {
+                        fvg.filled = true;
+                        fvg.filledAt = curr.time;
+                        activeFVGs.splice(j, 1);
+                        j--;
+                        continue;
                     }
                 }
             }
