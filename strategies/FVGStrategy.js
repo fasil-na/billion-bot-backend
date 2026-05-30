@@ -44,7 +44,7 @@ export const STRATEGY_CONFIGS = {
         rsiBearishMin: 15,
         rsiBearishMax: 85,
 
-        minRiskPerUnit: 10,           // allow smaller moves
+        minRiskPerUnit: 3,           // allow smaller moves
         maxRiskPerUnit: 200,         // allow bigger volatility trades
 
         bearishSlBufferRatio: 0.0007, // tighter SL → more trades, more SL hits
