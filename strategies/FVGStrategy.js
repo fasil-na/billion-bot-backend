@@ -133,6 +133,10 @@ export class FVGStrategy {
                         oldFvg.filledAt = c3.time;
                     });
                     activeFVGs = [fvg];
+
+                    if (activeTrade && activeTrade.status === "pending") {
+                        activeTrade = null;
+                    }
                 }
             } else if (c3.high < c1.low) {
                 const gapSize = c1.low - c3.high;
@@ -154,16 +158,29 @@ export class FVGStrategy {
                         oldFvg.filledAt = c3.time;
                     });
                     activeFVGs = [fvg];
+
+                    if (activeTrade && activeTrade.status === "pending") {
+                        activeTrade = null;
+                    }
                 }
             }
 
             if (activeTrade) {
                 const curr = candles[i];
                 const isBuy = activeTrade.direction === "buy";
-                const hitSL = isBuy ? curr.low <= (activeTrade.sl || 0) : curr.high >= (activeTrade.sl || Infinity);
-                const hitTP = isBuy ? curr.high >= (activeTrade.tp || Infinity) : curr.low <= (activeTrade.tp || 0);
 
-                if (hitSL || hitTP) {
+                if (activeTrade.status === "pending") {
+                    const hitEntry = isBuy ? (curr.low <= activeTrade.entryPrice) : (curr.high >= activeTrade.entryPrice);
+                    if (hitEntry) {
+                        activeTrade.status = "open";
+                    }
+                }
+
+                if (activeTrade.status === "open") {
+                    const hitSL = isBuy ? curr.low <= (activeTrade.sl || 0) : curr.high >= (activeTrade.sl || Infinity);
+                    const hitTP = isBuy ? curr.high >= (activeTrade.tp || Infinity) : curr.low <= (activeTrade.tp || 0);
+
+                    if (hitSL || hitTP) {
                     activeTrade.status = "closed";
                     activeTrade.exitTime = dayjs(curr.time).tz(TRADE_TIMEZONE).format();
 
@@ -196,6 +213,7 @@ export class FVGStrategy {
                     trades.push({ ...activeTrade });
                     activeTrade = null;
                     lastExitIndex = i;
+                }
                 }
             }
 
@@ -233,11 +251,10 @@ export class FVGStrategy {
                     }
 
                     let entryCondition = false;
+                    let isPendingEntry = false;
                     if (params.type === 'live_signal' && i === fvg.formedAt + 1) {
-                        // For a Buy Limit order to rest safely, current price MUST be above the limit price
-                        if (curr.open > midpoint) {
-                            entryCondition = true;
-                        }
+                        entryCondition = true;
+                        isPendingEntry = true;
                     } else {
                         entryCondition = (curr.low <= midpoint && curr.high >= midpoint);
                     }
@@ -288,14 +305,15 @@ export class FVGStrategy {
                             sl: sl,
                             tp: tp,
                             resolution: params.resolution || DEFAULT_RESOLUTION,
-                            status: "open",
+                            status: isPendingEntry ? "pending" : "open",
                             orderType: "limit_order",
                             profit: 0,
                             indicators: { fvgTop: fvg.top, fvgBottom: fvg.bottom }
                         };
 
-                        const exitInfo = this.checkIntraCandleExit(activeTrade, curr, subCandles);
-                        if (exitInfo) {
+                        if (activeTrade.status === "open") {
+                            const exitInfo = this.checkIntraCandleExit(activeTrade, curr, subCandles);
+                            if (exitInfo) {
                             activeTrade.status = "closed";
                             activeTrade.exitPrice = exitInfo.price;
                             activeTrade.exitTime = exitInfo.time;
@@ -312,6 +330,7 @@ export class FVGStrategy {
                             trades.push({ ...activeTrade });
                             activeTrade = null;
                             lastExitIndex = i;
+                        }
                         }
 
                         fvg.filled = true;
@@ -332,11 +351,10 @@ export class FVGStrategy {
                     }
 
                     let entryCondition = false;
+                    let isPendingEntry = false;
                     if (params.type === 'live_signal' && i === fvg.formedAt + 1) {
-                        // For a Sell Limit order to rest safely, current price MUST be below the limit price
-                        if (curr.open < midpoint) {
-                            entryCondition = true;
-                        }
+                        entryCondition = true;
+                        isPendingEntry = true;
                     } else {
                         entryCondition = (curr.high >= midpoint && curr.low <= midpoint);
                     }
@@ -387,14 +405,15 @@ export class FVGStrategy {
                             sl: sl,
                             tp: tp,
                             resolution: params.resolution || DEFAULT_RESOLUTION,
-                            status: "open",
+                            status: isPendingEntry ? "pending" : "open",
                             orderType: "limit_order",
                             profit: 0,
                             indicators: { fvgTop: fvg.top, fvgBottom: fvg.bottom }
                         };
 
-                        const exitInfo = this.checkIntraCandleExit(activeTrade, curr, subCandles);
-                        if (exitInfo) {
+                        if (activeTrade.status === "open") {
+                            const exitInfo = this.checkIntraCandleExit(activeTrade, curr, subCandles);
+                            if (exitInfo) {
                             activeTrade.status = "closed";
                             activeTrade.exitPrice = exitInfo.price;
                             activeTrade.exitTime = exitInfo.time;
@@ -411,6 +430,7 @@ export class FVGStrategy {
                             trades.push({ ...activeTrade });
                             activeTrade = null;
                             lastExitIndex = i;
+                        }
                         }
 
                         fvg.filled = true;
