@@ -1,7 +1,7 @@
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc.js';
 import timezone from 'dayjs/plugin/timezone.js';
-import { calculateRSI } from './StrategyUtils.js';
+import { calculateRSI, calculateEMA } from './StrategyUtils.js';
 import { TradeService } from '../services/TradeService.js';
 
 dayjs.extend(utc);
@@ -10,27 +10,27 @@ export const STRATEGY_CONFIGS = {
     'b-btc_usdt':
 
     {
-        riskRewardRatio: 3.5,
-        fvgExpiryCandles: 4,
+        riskRewardRatio: 1.8,
+        fvgExpiryCandles: 20,
         rangeLookback: 10,
-        minGapSizeRatio: 0.00005,
+        minGapSizeRatio: 0.0008,
         minC2BodyRatio: 0.001,
         rsiPeriod: 14,
-        rsiBullishMin: 15,
-        rsiBullishMax: 75,
-        rsiBearishMin: 15,
-        rsiBearishMax: 75,
-        minRiskPerUnit: 35,
-        maxRiskPerUnit: 150,
+        rsiBullishMin: 0,
+        rsiBullishMax: 100,
+        rsiBearishMin: 0,
+        rsiBearishMax: 100,
+        minRiskPerUnit: 60,
+        maxRiskPerUnit: 200,
         bearishSlBufferRatio: 0.001,
-        initialBalance: 5
+        initialBalance: 1000
     },
 
 
 
     'b-eth_usdt': {
-        riskRewardRatio: 4.8,
-        fvgExpiryCandles: 9,
+        riskRewardRatio: 1.5,
+        fvgExpiryCandles: 15,
         rangeLookback: 10,
         minGapSizeRatio: 0.00004,
         minC2BodyRatio: 0.0011,
@@ -39,7 +39,7 @@ export const STRATEGY_CONFIGS = {
         rsiBullishMax: 75,
         rsiBearishMin: 23,
         rsiBearishMax: 72,
-        minRiskPerUnit: 1,
+        minRiskPerUnit: 3,
         maxRiskPerUnit: 100,
         bearishSlBufferRatio: 0.0023,
         initialBalance: 5
@@ -93,6 +93,7 @@ export class FVGStrategy {
 
         const closes = candles.map(c => c.close);
         const rsiValues = calculateRSI(closes, rsiPeriod);
+        const ema200 = calculateEMA(closes, 200);
 
         const allFVGs = [];
         let activeFVGs = [];
@@ -111,51 +112,55 @@ export class FVGStrategy {
             if (c3.low > c1.high) {
                 const gapSize = c3.low - c1.high;
                 if (gapSize > (c3.close * minGapSizeRatio) && c2BodyRatio >= minC2BodyRatio) {
-                    const fvg = {
-                        top: c3.low,
-                        bottom: c1.high,
-                        direction: "bullish",
-                        formedAt: i,
-                        filled: false,
-                        startTime: c1.time,
-                        endTime: c3.time
-                    };
-                    allFVGs.push(fvg);
+                    const currentEma = ema200[i] || 0;
+                    if (currentEma === 0 || c3.close > currentEma) {
+                        const fvg = {
+                            top: c3.low,
+                            bottom: c1.high,
+                            direction: "bullish",
+                            formedAt: i,
+                            filled: false,
+                            startTime: c1.time,
+                            endTime: c3.time
+                        };
+                        allFVGs.push(fvg);
 
-                    // Option B: Invalidate any old FVGs and only track this new one
-                    activeFVGs.forEach(oldFvg => {
-                        oldFvg.filled = true;
-                        oldFvg.filledAt = c3.time;
-                    });
-                    activeFVGs = [fvg];
+                        activeFVGs.forEach(oldFvg => {
+                            oldFvg.filled = true;
+                            oldFvg.filledAt = c3.time;
+                        });
+                        activeFVGs = [fvg];
 
-                    if (activeTrade && activeTrade.status === "pending") {
-                        activeTrade = null;
+                        if (activeTrade && activeTrade.status === "pending") {
+                            activeTrade = null;
+                        }
                     }
                 }
             } else if (c3.high < c1.low) {
                 const gapSize = c1.low - c3.high;
                 if (gapSize > (c3.close * minGapSizeRatio) && c2BodyRatio >= minC2BodyRatio) {
-                    const fvg = {
-                        top: c1.low,
-                        bottom: c3.high,
-                        direction: "bearish",
-                        formedAt: i,
-                        filled: false,
-                        startTime: c1.time,
-                        endTime: c3.time
-                    };
-                    allFVGs.push(fvg);
+                    const currentEma = ema200[i] || 0;
+                    if (currentEma === 0 || c3.close < currentEma) {
+                        const fvg = {
+                            top: c1.low,
+                            bottom: c3.high,
+                            direction: "bearish",
+                            formedAt: i,
+                            filled: false,
+                            startTime: c1.time,
+                            endTime: c3.time
+                        };
+                        allFVGs.push(fvg);
 
-                    // Option B: Invalidate any old FVGs and only track this new one
-                    activeFVGs.forEach(oldFvg => {
-                        oldFvg.filled = true;
-                        oldFvg.filledAt = c3.time;
-                    });
-                    activeFVGs = [fvg];
+                        activeFVGs.forEach(oldFvg => {
+                            oldFvg.filled = true;
+                            oldFvg.filledAt = c3.time;
+                        });
+                        activeFVGs = [fvg];
 
-                    if (activeTrade && activeTrade.status === "pending") {
-                        activeTrade = null;
+                        if (activeTrade && activeTrade.status === "pending") {
+                            activeTrade = null;
+                        }
                     }
                 }
             }
@@ -368,6 +373,7 @@ export class FVGStrategy {
 
                         const step = staticData.qtyStep;
                         const unitsPrecision = 3;
+                        
                         let units = riskAmount / riskPerUnit;
                         units = Math.floor(units / step) * step;
                         units = Number(units.toFixed(unitsPrecision));

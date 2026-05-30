@@ -83,23 +83,19 @@ export const runBacktest = async (req, res) => {
         const pair = req.body.pair || req.query.pair || "B-BTC_USDT";
         const riskAmountFromReq = parseFloat(req.body.riskAmount) || 100;
         const resolutionReq = req.body.interval || req.query.resolution || "15";
-        const resolution = resolutionReq;
+        const resolution = resolutionReq.replace(/[^0-9]/g, '');
 
         let fetchStart, end, simulationStartUnix;
 
         if (req.body.startDate && req.body.endDate) {
-            const startObj = dayjs(req.body.startDate).tz('Asia/Kolkata');
-            const endObj = dayjs(req.body.endDate).tz('Asia/Kolkata');
-            const start = Math.floor(startObj.startOf('day').valueOf() / 1000);
-            end = Math.floor(endObj.endOf('day').valueOf() / 1000);
-
-            fetchStart = start - 172800; // 2 days before for indicators
-            simulationStartUnix = start;
+            simulationStartUnix = Math.floor(new Date(req.body.startDate).getTime() / 1000);
+            end = Math.floor(new Date(req.body.endDate).getTime() / 1000) + 86399; // End of day
+            fetchStart = simulationStartUnix - 864000; // 10 days of warmup data for 200 EMA
         } else {
             // Default to last 30 days if no dates
             end = Math.floor(Date.now() / 1000);
             const start = end - (30 * 24 * 60 * 60);
-            fetchStart = start - 172800;
+            fetchStart = start - 864000; // 10 days of warmup data
             simulationStartUnix = start;
         }
 

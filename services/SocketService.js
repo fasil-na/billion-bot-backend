@@ -242,11 +242,12 @@ class SocketService {
 
     try {
       const resolutionMatch = channel.match(/_(\d+[A-Za-z]+)-futures/);
-      const resolution = resolutionMatch ? resolutionMatch[1] : "15";
-      const pair = channel.replace(`_${resolution}-futures`, "");
+      const rawResolution = resolutionMatch ? resolutionMatch[1] : "15m";
+      const resolution = rawResolution.replace(/[^0-9]/g, '');
+      const pair = channel.replace(`_${rawResolution}-futures`, "");
 
       const to = Math.floor(Date.now() / 1000);
-      const from = to - (48 * 60 * 60);
+      const from = to - (10 * 24 * 60 * 60); // 10 days lookback for 200 EMA warmup
 
       let fetchedCandles = [];
       let foundExpected = false;
@@ -312,6 +313,7 @@ class SocketService {
   }
 
   static async recoverCandlesForChannel(channel) {
+    console.log(channel,'channel-----')
     const registry = this.marketRegistry.get(channel);
     if (!registry) return;
 
@@ -320,11 +322,13 @@ class SocketService {
 
     try {
       const resolutionMatch = channel.match(/_(\d+[A-Za-z]+)-futures/);
-      const resolution = resolutionMatch ? resolutionMatch[1] : "1m";
-      const pair = channel.replace(`_${resolution}-futures`, "");
+      const rawResolution = resolutionMatch ? resolutionMatch[1] : "15m";
+      const resolution = rawResolution.replace(/[^0-9]/g, '');
+      console.log(resolution,'resolution------')
+      const pair = channel.replace(`_${rawResolution}-futures`, "");
 
       const to = Math.floor(Date.now() / 1000);
-      const from = to - (48 * 60 * 60); // 48 hours lookback (perfect sync with backtester)
+      const from = to - (10 * 24 * 60 * 60); // 10 days lookback for 200 EMA warmup
 
       const response = await axios.get(
         "https://public.coindcx.com/market_data/candlesticks",
@@ -341,7 +345,6 @@ class SocketService {
       );
 
       let candles = response.data?.data || response.data;
-
       if (Array.isArray(candles) && candles.length > 0) {
         // Normalize timestamps and sort ascending
         candles = candles
@@ -1005,7 +1008,7 @@ console.log(positions,'positions=======')
             { configId, pair: activeTrade.pair || "" }
           );
         }
-        const strategyConfig = STRATEGY_CONFIGS[cleanPairStr];
+        const strategyConfig = STRATEGY_CONFIGS[cleanPairStr] || STRATEGY_CONFIGS['b-btc_usdt'];
         const fvgExpiryCandles = strategyConfig.fvgExpiryCandles;
 
         const maxWaitMinutes = fvgExpiryCandles * intervalMinutes;
