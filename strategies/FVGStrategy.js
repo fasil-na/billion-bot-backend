@@ -44,7 +44,7 @@ export const STRATEGY_CONFIGS = {
         rsiBearishMin: 15,
         rsiBearishMax: 85,
 
-        minRiskPerUnit: 3,           // allow smaller moves
+        minRiskPerUnit: 5,           // allow smaller moves
         maxRiskPerUnit: 200,         // allow bigger volatility trades
 
         bearishSlBufferRatio: 0.0007, // tighter SL → more trades, more SL hits
@@ -193,6 +193,7 @@ export class FVGStrategy {
                                 activeFVGs.forEach(oldFvg => {
                                     oldFvg.filled = true;
                                     oldFvg.filledAt = c3.time;
+                                    oldFvg.status = 'cancelled';
                                 });
                                 activeFVGs = [fvg];
 
@@ -258,6 +259,7 @@ export class FVGStrategy {
                                 activeFVGs.forEach(oldFvg => {
                                     oldFvg.filled = true;
                                     oldFvg.filledAt = c3.time;
+                                    oldFvg.status = 'cancelled';
                                 });
                                 activeFVGs = [fvg];
 
@@ -411,6 +413,7 @@ export class FVGStrategy {
 
                         fvg.filled = true;
                         fvg.filledAt = curr.time;
+                        fvg.status = 'trade_executed';
                         activeFVGs.splice(j, 1);
                         break;
                     }
@@ -481,6 +484,7 @@ export class FVGStrategy {
 
                         fvg.filled = true;
                         fvg.filledAt = curr.time;
+                        fvg.status = 'trade_executed';
                         activeFVGs.splice(j, 1);
                         break;
                     }
