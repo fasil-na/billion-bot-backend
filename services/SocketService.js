@@ -401,6 +401,53 @@ class SocketService {
   }
 
   // ─────────────────────────────────────────────
+  // VERIFY PROTECTION (SL DROPPED BY EXCHANGE)
+  // ─────────────────────────────────────────────
+  static async verifyProtection(configId) {
+    const state = this.getState(configId);
+    if (!state?.activeTrade || state.activeTrade.status !== "open" || state.activeTrade.type !== "real") return;
+
+    if (this.apiFallbackDebounce.has(state.activeTrade._id + "_verify")) return;
+    this.apiFallbackDebounce.set(state.activeTrade._id + "_verify", true);
+
+    try {
+        const orders = await TradeService.getOrders();
+        if (Array.isArray(orders)) {
+            orders.sort((a, b) => dayjs(b.created_at || b.updated_at).valueOf() - dayjs(a.created_at || a.updated_at).valueOf());
+            const entryOrder = orders.find(o => 
+                (o.pair === state.activeTrade.pair || o.symbol === state.activeTrade.pair) &&
+                o.status === "filled" &&
+                (o.order_type === "limit_order" || o.order_type === "market_order") &&
+                o.stage !== "exit" && o.stage !== "tpsl_exit" && o.stage !== "liquidate" &&
+                Math.abs(o.created_at - dayjs(state.activeTrade.entryTime).valueOf()) < 10 * 60 * 1000
+            );
+console.log(entryOrder,'entryOrder=======')
+            if (entryOrder) {
+                const slMissing = !entryOrder.stop_loss_price || entryOrder.stop_loss_price === 0;
+                const tpMissing = !entryOrder.take_profit_price || entryOrder.take_profit_price === 0;
+                console.log(slMissing,'slMissing-----')
+                if (slMissing || tpMissing) {
+                    const missingType = slMissing && tpMissing ? "SL & TP" : (slMissing ? "Stop Loss" : "Take Profit");
+                    await LoggerService.log(
+                        "warn", 
+                        `🚨 CRITICAL: Exchange rejected ${missingType} for ${state.activeTrade.pair}! Triggering emergency close...`, 
+                        "SocketService", 
+                        { configId, pair: state.activeTrade.pair }
+                    );
+
+                    const posId = state.currentPosition?.id || state.currentPosition?.position_id;
+                    if (posId) {
+                        await TradeService.closePosition({ positionId: posId });
+                    }
+                }
+            }
+        }
+    } catch (err) {
+        console.error("Verify Protection error:", err.message);
+    }
+  }
+
+  // ─────────────────────────────────────────────
   // FORMAT CHANNEL
   // ─────────────────────────────────────────────
   static formatChannel(pair, resolution = DEFAULT_RESOLUTION) {
@@ -638,6 +685,10 @@ console.log(positions,'positions=======')
             )
           );
           this.io.emit("trade-history-update", updatedTrade);
+
+          if (statusChanged) {
+            setTimeout(() => this.verifyProtection(id), 1000);
+          }
 
           console.log(
             `[SocketService] 🔄 Synced from exchange for ${pair}: ` +
@@ -1086,12 +1137,14 @@ console.log(positions,'positions=======')
                                 await TradeHistoryService.saveTrade({ ...freshState.activeTrade, status: "open" });
                                 this.updateState(configId, { 
                                   activeTrade: { ...freshState.activeTrade, status: "open" }, 
-                                  currentPosition: { active_pos: freshState.activeTrade.units || 0 } 
+                                  currentPosition: { active_pos: freshState.activeTrade.units || 0, id: activePos.id || activePos.position_id } 
                                 });
+                                setTimeout(() => this.verifyProtection(configId), 1000);
                             } else {
                                 // ── Flash Trade Detection ──
                                 const orders = await TradeService.getOrders();
                                 if (Array.isArray(orders)) {
+                                    orders.sort((a, b) => dayjs(b.created_at || b.updated_at).valueOf() - dayjs(a.created_at || a.updated_at).valueOf());
                                     const tradeEntryUnix = dayjs(activeTrade.entryTime).valueOf();
                                     
                                     const entryOrder = orders.find(o => 
@@ -1102,7 +1155,7 @@ console.log(positions,'positions=======')
                                         Math.abs(o.created_at - tradeEntryUnix) < 10 * 60 * 1000 
                                     );
                                     
-                                    if (entryOrder && entryOrder.updated_at > entryOrder.created_at) {
+                                    if (entryOrder) {
                                         const exitOrder = orders.find(o => 
                                             (o.pair === activeTrade.pair || o.symbol === activeTrade.pair) &&
                                             o.status === "filled" &&
