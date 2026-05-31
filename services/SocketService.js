@@ -54,6 +54,7 @@ class SocketService {
   //   positionMissCount
   // }
   static configStates = new Map();
+  static apiFallbackDebounce = new Map();
 
   // channel → { candles: [], candleIndexMap: Map, isRecovering: bool }
   static marketRegistry = new Map();
@@ -508,7 +509,7 @@ class SocketService {
         for (const [configId, state] of this.configStates.entries()) {
           const configPair = (state.config.pair || "").replace(/^B-/, "").toLowerCase();
           
-          if (configPair === cleanIncoming && state.activeTrade?.status === "open") {
+          if (configPair === cleanIncoming && (state.activeTrade?.status === "open" || state.activeTrade?.status === "pending")) {
             this.monitorRealTimeSL(data, configId).catch((err) =>
               LoggerService.log(
                 "error",
@@ -816,6 +817,15 @@ console.log(positions,'positions=======')
         console.log(result.matched, result.trade, "result.matched && result.trade");
 
         if (result.matched && result.trade) {
+          const tradeEntryUnix = dayjs(result.trade.entryTime).valueOf();
+          if (tradeEntryUnix < latestCandle.time) {
+            console.log(`[SocketService] 🚫 Stale Signal Blocked! tradeEntryUnix: ${tradeEntryUnix} (${dayjs(tradeEntryUnix).format()}), latestCandleTime: ${latestCandle.time} (${dayjs(latestCandle.time).format()})`);
+            // Stale signal from a previous candle that was already traded
+            return;
+          } else {
+            console.log(`[SocketService] ✅ Signal Valid! tradeEntryUnix: ${tradeEntryUnix}, latestCandleTime: ${latestCandle.time}`);
+          }
+
           if (state.activeTrade) {
              // Check if the new FVG signal is fundamentally different from the currently pending Limit Order
              const isDifferent = Math.abs(state.activeTrade.entryPrice - result.trade.entryPrice) > 0.0001;
@@ -1022,7 +1032,7 @@ console.log(positions,'positions=======')
         const now = dayjs();
         const minutesElapsed = now.diff(entryTime, "minute");
 
-        if (minutesElapsed >= maxWaitMinutes) {
+        if (minutesElapsed > maxWaitMinutes) {
           await LoggerService.log(
             "imp",
             `⏳ Limit order expired after ${fvgExpiryCandles} candles ` +
@@ -1050,11 +1060,111 @@ console.log(positions,'positions=======')
           this.io.emit("trade-history-update", expired);
         }
     
+        // ── API FALLBACK: Check Entry ──
+        const currentPrice = tick.close;
+        const high = tick.high || currentPrice;
+        const low = tick.low || currentPrice;
+        const isBuy = activeTrade.direction === "buy";
+        
+        const touchedEntry = isBuy ? (low <= activeTrade.entryPrice) : (high >= activeTrade.entryPrice);
+        
+        if (touchedEntry && !SocketService.apiFallbackDebounce.has(activeTrade._id)) {
+            SocketService.apiFallbackDebounce.set(activeTrade._id, true);
+            setTimeout(async () => {
+                try {
+                    const freshState = this.getState(configId);
+                    if (freshState?.activeTrade?.status === "pending" && freshState.activeTrade._id === activeTrade._id) {
+                        await LoggerService.log("warn", `🔍 Price touched entry for ${activeTrade.pair} but WebSocket missed it! Polling API...`, "SocketService", { configId, pair: activeTrade.pair });
+                        
+                        const positions = await TradeService.getPositions();
+                        if (Array.isArray(positions)) {
+                            // Only force 'open' if there is actually an active position with size > 0
+                            const activePos = positions.find(p => (p.pair === activeTrade.pair || p.symbol === activeTrade.pair) && Math.abs(Number(p.size || p.active_pos || p.total_quantity || 0)) > 0);
+                            
+                            if (activePos) {
+                                await LoggerService.log("success", `✅ API confirmed ${activeTrade.pair} limit order FILLED! Forcing 'open' status.`, "SocketService", { configId, pair: activeTrade.pair });
+                                await TradeHistoryService.saveTrade({ ...freshState.activeTrade, status: "open" });
+                                this.updateState(configId, { 
+                                  activeTrade: { ...freshState.activeTrade, status: "open" }, 
+                                  currentPosition: { active_pos: freshState.activeTrade.units || 0 } 
+                                });
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error("API Fallback entry failed:", e.message);
+                } finally {
+                    SocketService.apiFallbackDebounce.delete(activeTrade._id);
+                }
+            }, 3000); // 3 second grace period for WebSocket
+        }
+
         return;
       }
 
-      // Real trade with confirmed position — exchange handles SL/TP, we don't touch it
-      if (activeTrade.type === "real") return;
+      // Real trade with confirmed position — exchange handles SL/TP, but we do API fallback check
+      if (activeTrade.type === "real") {
+          const currentPrice = tick.close;
+          const high = tick.high || currentPrice;
+          const low = tick.low || currentPrice;
+          const sl = activeTrade.sl || activeTrade.stop_loss_price || 0;
+          const tp = activeTrade.tp || activeTrade.take_profit_price || 0;
+          const isBuy = activeTrade.direction === "buy";
+          
+          let exitHit = false;
+          let reason = "";
+
+          if (isBuy) {
+            if (sl > 0 && low <= sl) { exitHit = true; reason = "SL Hit"; }
+            else if (tp > 0 && high >= tp) { exitHit = true; reason = "TP Hit"; }
+          } else {
+            if (sl > 0 && high >= sl) { exitHit = true; reason = "SL Hit"; }
+            else if (tp > 0 && low <= tp) { exitHit = true; reason = "TP Hit"; }
+          }
+          
+          if (exitHit && !SocketService.apiFallbackDebounce.has(activeTrade._id + "_exit")) {
+              SocketService.apiFallbackDebounce.set(activeTrade._id + "_exit", true);
+              setTimeout(async () => {
+                  try {
+                      const freshState = this.getState(configId);
+                      if (freshState?.activeTrade?.status === "open" && freshState.activeTrade._id === activeTrade._id) {
+                          await LoggerService.log("warn", `🔍 Price touched ${reason} for ${activeTrade.pair}. Checking API fallback...`, "SocketService", { configId, pair: activeTrade.pair });
+                          
+                          const positions = await TradeService.getPositions();
+                          if (Array.isArray(positions)) {
+                              // If there is NO active position, the exchange closed it
+                              const activePos = positions.find(p => (p.pair === activeTrade.pair || p.symbol === activeTrade.pair) && Math.abs(Number(p.size || p.active_pos || p.total_quantity || 0)) > 0);
+                              
+                              if (!activePos) {
+                                  await LoggerService.log("success", `✅ API confirmed ${activeTrade.pair} closed via ${reason}! Forcing 'closed' status.`, "SocketService", { configId, pair: activeTrade.pair });
+                                  const targetPrice = reason === "SL Hit" ? sl : tp;
+                                  const { profit, fee, pnlPercent, grossProfit, entryFee, exitFee } = calculateTradeProfit(freshState.activeTrade, targetPrice);
+                                  
+                                  const closedTrade = {
+                                    ...freshState.activeTrade,
+                                    status: "closed",
+                                    exitPrice: targetPrice,
+                                    exitTime: dayjs().tz("Asia/Kolkata").format(),
+                                    exitReason: `Exchange Auto-Closed (${reason})`,
+                                    profit, fee, pnlPercent, grossProfit, entryFee, exitFee
+                                  };
+                                  
+                                  await TradeHistoryService.saveTrade(closedTrade);
+                                  this.updateState(configId, { activeTrade: null, currentPosition: null });
+                                  this.io.emit("trade-history-update", closedTrade);
+                              }
+                          }
+                      }
+                  } catch (e) {
+                      console.error("API Fallback exit failed:", e.message);
+                  } finally {
+                      SocketService.apiFallbackDebounce.delete(activeTrade._id + "_exit");
+                  }
+              }, 3000); // 3 second grace period for WebSocket
+          }
+          return;
+      }
+      
       // ── Paper trade SL/TP monitoring ──
       const currentPrice = tick.close;
 

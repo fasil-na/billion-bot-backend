@@ -88,8 +88,8 @@ export const runBacktest = async (req, res) => {
         let fetchStart, end, simulationStartUnix;
 
         if (req.body.startDate && req.body.endDate) {
-            simulationStartUnix = Math.floor(new Date(req.body.startDate).getTime() / 1000);
-            end = Math.floor(new Date(req.body.endDate).getTime() / 1000) + 86399; // End of day
+            simulationStartUnix = dayjs.tz(req.body.startDate, "Asia/Kolkata").startOf('day').unix();
+            end = dayjs.tz(req.body.endDate, "Asia/Kolkata").endOf('day').unix();
             fetchStart = simulationStartUnix - 864000; // 10 days of warmup data for 200 EMA
         } else {
             // Default to last 30 days if no dates

@@ -192,6 +192,13 @@ export class FVGStrategy {
             }
 
             if (activeTrade) {
+                if (params.type === 'live_signal') {
+                    // In live_signal mode, we only care about generating the signal.
+                    // The SocketService handles the actual trade lifecycle (entry/SL/TP).
+                    // We leave it as 'pending' so it can be cleanly replaced by newer FVGs.
+                    continue;
+                }
+
                 const curr = candles[i];
                 const isBuy = activeTrade.direction === "buy";
 
@@ -266,7 +273,12 @@ export class FVGStrategy {
 
                 if (fvg.direction === "bullish") {
                     const formedRSI = rsiValues[fvg.formedAt] || 50;
-                    if (formedRSI <= rsiBullishMin || formedRSI >= rsiBullishMax) continue;
+                    if (formedRSI <= rsiBullishMin || formedRSI >= rsiBullishMax) {
+                        fvg.filled = true;
+                        fvg.status = 'skipped';
+                        fvg.rejectReason = `RSI LIMIT (${formedRSI.toFixed(1)})`;
+                        continue;
+                    }
 
                     let entryCondition = false;
                     let isPendingEntry = false;
@@ -366,7 +378,12 @@ export class FVGStrategy {
                     }
                 } else {
                     const formedRSI = rsiValues[fvg.formedAt] || 50;
-                    if (formedRSI >= rsiBearishMax || formedRSI <= rsiBearishMin) continue;
+                    if (formedRSI >= rsiBearishMax || formedRSI <= rsiBearishMin) {
+                        fvg.filled = true;
+                        fvg.status = 'skipped';
+                        fvg.rejectReason = `RSI LIMIT (${formedRSI.toFixed(1)})`;
+                        continue;
+                    }
 
                     let entryCondition = false;
                     let isPendingEntry = false;
@@ -392,6 +409,8 @@ export class FVGStrategy {
                         if (riskPerUnit < minRiskPerUnit || riskPerUnit > maxRiskPerUnit) {
                             fvg.filled = true;
                             fvg.filledAt = curr.time;
+                            fvg.status = 'skipped';
+                            fvg.rejectReason = 'RISK LIMIT';
                             activeFVGs.splice(j, 1);
                             j--;
                             continue;
@@ -408,6 +427,8 @@ export class FVGStrategy {
                         if (units < minQty || units <= 0) {
                             fvg.filled = true;
                             fvg.filledAt = curr.time;
+                            fvg.status = 'skipped';
+                            fvg.rejectReason = 'MIN QTY LIMIT';
                             activeFVGs.splice(j, 1);
                             j--;
                             continue;
