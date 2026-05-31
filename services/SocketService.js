@@ -665,10 +665,13 @@ console.log(positions,'positions=======')
 
       const tradeToClose = freshState.activeTrade;
 
-      // Clear active trade and position immediately
-      this.updateState(id, { activeTrade: null, currentPosition: null });
+      // Clear active trade and position immediately, and lock strategy execution
+      this.updateState(id, { activeTrade: null, currentPosition: null, isClosingPosition: true });
 
-      if (!tradeToClose) return;
+      if (!tradeToClose) {
+        this.updateState(id, { isClosingPosition: false });
+        return;
+      }
 
       tradeToClose.status = "closed";
       tradeToClose.exitTime = dayjs().tz("Asia/Kolkata").format();
@@ -685,6 +688,8 @@ console.log(positions,'positions=======')
                 o.pair === pair &&
                 o.status === "filled" &&
                 (o.stage === "exit" ||
+                  o.stage === "tpsl_exit" ||
+                  o.stage === "liquidate" ||
                   o.order_category === "complete_tpsl" ||
                   o.order_type === "stop_market" ||
                   o.order_type === "take_profit_market")
@@ -743,8 +748,12 @@ console.log(positions,'positions=======')
         );
       }
 
-      await TradeHistoryService.saveTrade(tradeToClose);
-      this.io.emit("trade-history-update", tradeToClose);
+      try {
+        await TradeHistoryService.saveTrade(tradeToClose);
+        this.io.emit("trade-history-update", tradeToClose);
+      } finally {
+        this.updateState(id, { isClosingPosition: false });
+      }
     }
   }
 
@@ -1079,6 +1088,58 @@ console.log(positions,'positions=======')
                                   activeTrade: { ...freshState.activeTrade, status: "open" }, 
                                   currentPosition: { active_pos: freshState.activeTrade.units || 0 } 
                                 });
+                            } else {
+                                // ── Flash Trade Detection ──
+                                const orders = await TradeService.getOrders();
+                                if (Array.isArray(orders)) {
+                                    const tradeEntryUnix = dayjs(activeTrade.entryTime).valueOf();
+                                    
+                                    const entryOrder = orders.find(o => 
+                                        (o.pair === activeTrade.pair || o.symbol === activeTrade.pair) &&
+                                        o.status === "filled" &&
+                                        (o.order_type === "limit_order" || o.order_type === "market_order") &&
+                                        o.stage !== "exit" && o.stage !== "tpsl_exit" && o.stage !== "liquidate" &&
+                                        Math.abs(o.created_at - tradeEntryUnix) < 10 * 60 * 1000 
+                                    );
+                                    
+                                    if (entryOrder && entryOrder.updated_at > entryOrder.created_at) {
+                                        const exitOrder = orders.find(o => 
+                                            (o.pair === activeTrade.pair || o.symbol === activeTrade.pair) &&
+                                            o.status === "filled" &&
+                                            (o.stage === "exit" || o.stage === "tpsl_exit" || o.stage === "liquidate" || o.order_category === "complete_tpsl" || o.order_type === "stop_market" || o.order_type === "take_profit_market") &&
+                                            o.updated_at >= entryOrder.updated_at
+                                        );
+                                        
+                                        if (exitOrder) {
+                                            await LoggerService.log("warn", `⚡ Flash Trade Detected! Limit order for ${activeTrade.pair} was filled and closed immediately.`, "SocketService", { configId, pair: activeTrade.pair });
+                                            
+                                            this.updateState(configId, { isClosingPosition: true });
+                                            
+                                            const targetPrice = exitOrder.avg_price || (exitOrder.order_type === "stop_market" ? activeTrade.sl : activeTrade.tp);
+                                            const reason = exitOrder.order_type === "stop_market" ? "SL Hit" : "TP Hit";
+                                            
+                                            const { profit, fee, pnlPercent, grossProfit, entryFee, exitFee } = calculateTradeProfit(freshState.activeTrade, targetPrice);
+                                            
+                                            const closedTrade = {
+                                                ...freshState.activeTrade,
+                                                status: "closed",
+                                                actualEntryPrice: entryOrder.avg_price || activeTrade.entryPrice,
+                                                exitPrice: targetPrice,
+                                                exitTime: dayjs(exitOrder.updated_at).tz("Asia/Kolkata").format(),
+                                                exitReason: `Flash Auto-Closed (${reason})`,
+                                                profit, fee, pnlPercent, grossProfit, entryFee, exitFee
+                                            };
+                                            
+                                            try {
+                                                await TradeHistoryService.saveTrade(closedTrade);
+                                                this.updateState(configId, { activeTrade: null, currentPosition: null });
+                                                this.io.emit("trade-history-update", closedTrade);
+                                            } finally {
+                                                this.updateState(configId, { isClosingPosition: false });
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1127,6 +1188,7 @@ console.log(positions,'positions=======')
                               const activePos = positions.find(p => (p.pair === activeTrade.pair || p.symbol === activeTrade.pair) && Math.abs(Number(p.size || p.active_pos || p.total_quantity || 0)) > 0);
                               
                               if (!activePos) {
+                                  this.updateState(configId, { isClosingPosition: true });
                                   await LoggerService.log("success", `✅ API confirmed ${activeTrade.pair} closed via ${reason}! Forcing 'closed' status.`, "SocketService", { configId, pair: activeTrade.pair });
                                   const targetPrice = reason === "SL Hit" ? sl : tp;
                                   const { profit, fee, pnlPercent, grossProfit, entryFee, exitFee } = calculateTradeProfit(freshState.activeTrade, targetPrice);
@@ -1140,9 +1202,13 @@ console.log(positions,'positions=======')
                                     profit, fee, pnlPercent, grossProfit, entryFee, exitFee
                                   };
                                   
-                                  await TradeHistoryService.saveTrade(closedTrade);
-                                  this.updateState(configId, { activeTrade: null, currentPosition: null });
-                                  this.io.emit("trade-history-update", closedTrade);
+                                  try {
+                                      await TradeHistoryService.saveTrade(closedTrade);
+                                      this.updateState(configId, { activeTrade: null, currentPosition: null });
+                                      this.io.emit("trade-history-update", closedTrade);
+                                  } finally {
+                                      this.updateState(configId, { isClosingPosition: false });
+                                  }
                               }
                           }
                       }
