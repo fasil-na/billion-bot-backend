@@ -817,15 +817,6 @@ console.log(positions,'positions=======')
         console.log(result.matched, result.trade, "result.matched && result.trade");
 
         if (result.matched && result.trade) {
-          const tradeEntryUnix = dayjs(result.trade.entryTime).valueOf();
-          if (tradeEntryUnix < latestCandle.time) {
-            console.log(`[SocketService] 🚫 Stale Signal Blocked! tradeEntryUnix: ${tradeEntryUnix} (${dayjs(tradeEntryUnix).format()}), latestCandleTime: ${latestCandle.time} (${dayjs(latestCandle.time).format()})`);
-            // Stale signal from a previous candle that was already traded
-            return;
-          } else {
-            console.log(`[SocketService] ✅ Signal Valid! tradeEntryUnix: ${tradeEntryUnix}, latestCandleTime: ${latestCandle.time}`);
-          }
-
           if (state.activeTrade) {
              // Check if the new FVG signal is fundamentally different from the currently pending Limit Order
              const isDifferent = Math.abs(state.activeTrade.entryPrice - result.trade.entryPrice) > 0.0001;

@@ -135,131 +135,135 @@ export class FVGStrategy {
             const c2Body = Math.abs(c2.open - c2.close);
             const c2BodyRatio = c2Range > 0 ? c2Body / c2Range : 0;
 
-            if (c3.low > c1.high) {
-                const gapSize = c3.low - c1.high;
-                if (gapSize > (c3.close * minGapSizeRatio) && c2BodyRatio >= minC2BodyRatio) {
-                    const currentEma = ema200[i] || 0;
-                    if (currentEma === 0 || c3.close > currentEma) {
-                        const fvg = {
-                            top: c3.low,
-                            bottom: c1.high,
-                            direction: "bullish",
-                            formedAt: i,
-                            filled: false,
-                            startTime: c1.time,
-                            endTime: c3.time
-                        };
-                        
-                        fvg.midpoint = (fvg.top + fvg.bottom) / 2;
-                        const formedRSI = rsiValues[i] || 50;
-                        const buffer = 0;
-                        const riskPerUnit = Math.abs(fvg.midpoint - (fvg.bottom - buffer));
-                        
-                        const step = staticData.qtyStep;
-                        let units = riskAmount / riskPerUnit;
-                        units = Math.floor(units / step) * step;
-                        units = Number(units.toFixed(3));
-                        const minQty = Math.ceil((staticData.minNotional / fvg.midpoint) / staticData.qtyStep) * staticData.qtyStep;
+            const isClosedCandle = (params.type !== 'live_signal') || (i < candles.length - 1);
 
-                        let isValid = true;
-                        let rejectReason = "";
-
-                        if (formedRSI <= rsiBullishMin || formedRSI >= rsiBullishMax) {
-                            isValid = false;
-                            rejectReason = `RSI LIMIT (${formedRSI.toFixed(1)})`;
-                        } else if (riskPerUnit < minRiskPerUnit || riskPerUnit > maxRiskPerUnit) {
-                            isValid = false;
-                            rejectReason = 'RISK LIMIT';
-                        } else if (units < minQty || units <= 0) {
-                            isValid = false;
-                            rejectReason = 'MIN QTY LIMIT';
-                        }
-
-                        if (!isValid) {
-                            fvg.filled = true;
-                            fvg.filledAt = c3.time;
-                            fvg.status = 'skipped';
-                            fvg.rejectReason = rejectReason;
-                            allFVGs.push(fvg);
-                        } else {
-                            fvg.units = units;
-                            fvg.tp = Number((fvg.midpoint + (riskPerUnit * rr)).toFixed(pricePrecision));
-                            fvg.sl = Number((fvg.midpoint - riskPerUnit).toFixed(pricePrecision));
+            if (isClosedCandle) {
+                if (c3.low > c1.high) {
+                    const gapSize = c3.low - c1.high;
+                    if (gapSize > (c3.close * minGapSizeRatio) && c2BodyRatio >= minC2BodyRatio) {
+                        const currentEma = ema200[i] || 0;
+                        if (currentEma === 0 || c3.close > currentEma) {
+                            const fvg = {
+                                top: c3.low,
+                                bottom: c1.high,
+                                direction: "bullish",
+                                formedAt: i,
+                                filled: false,
+                                startTime: c1.time,
+                                endTime: c3.time
+                            };
                             
-                            allFVGs.push(fvg);
-                            activeFVGs.forEach(oldFvg => {
-                                oldFvg.filled = true;
-                                oldFvg.filledAt = c3.time;
-                            });
-                            activeFVGs = [fvg];
+                            fvg.midpoint = (fvg.top + fvg.bottom) / 2;
+                            const formedRSI = rsiValues[i] || 50;
+                            const buffer = 0;
+                            const riskPerUnit = Math.abs(fvg.midpoint - (fvg.bottom - buffer));
+                            
+                            const step = staticData.qtyStep;
+                            let units = riskAmount / riskPerUnit;
+                            units = Math.floor(units / step) * step;
+                            units = Number(units.toFixed(3));
+                            const minQty = Math.ceil((staticData.minNotional / fvg.midpoint) / staticData.qtyStep) * staticData.qtyStep;
 
-                            if (activeTrade && activeTrade.status === "pending") {
-                                activeTrade = null;
+                            let isValid = true;
+                            let rejectReason = "";
+
+                            if (formedRSI <= rsiBullishMin || formedRSI >= rsiBullishMax) {
+                                isValid = false;
+                                rejectReason = `RSI LIMIT (${formedRSI.toFixed(1)})`;
+                            } else if (riskPerUnit < minRiskPerUnit || riskPerUnit > maxRiskPerUnit) {
+                                isValid = false;
+                                rejectReason = 'RISK LIMIT';
+                            } else if (units < minQty || units <= 0) {
+                                isValid = false;
+                                rejectReason = 'MIN QTY LIMIT';
+                            }
+
+                            if (!isValid) {
+                                fvg.filled = true;
+                                fvg.filledAt = c3.time;
+                                fvg.status = 'skipped';
+                                fvg.rejectReason = rejectReason;
+                                allFVGs.push(fvg);
+                            } else {
+                                fvg.units = units;
+                                fvg.tp = Number((fvg.midpoint + (riskPerUnit * rr)).toFixed(pricePrecision));
+                                fvg.sl = Number((fvg.midpoint - riskPerUnit).toFixed(pricePrecision));
+                                
+                                allFVGs.push(fvg);
+                                activeFVGs.forEach(oldFvg => {
+                                    oldFvg.filled = true;
+                                    oldFvg.filledAt = c3.time;
+                                });
+                                activeFVGs = [fvg];
+
+                                if (activeTrade && activeTrade.status === "pending") {
+                                    activeTrade = null;
+                                }
                             }
                         }
                     }
-                }
-            } else if (c3.high < c1.low) {
-                const gapSize = c1.low - c3.high;
-                if (gapSize > (c3.close * minGapSizeRatio) && c2BodyRatio >= minC2BodyRatio) {
-                    const currentEma = ema200[i] || 0;
-                    if (currentEma === 0 || c3.close < currentEma) {
-                        const fvg = {
-                            top: c1.low,
-                            bottom: c3.high,
-                            direction: "bearish",
-                            formedAt: i,
-                            filled: false,
-                            startTime: c1.time,
-                            endTime: c3.time
-                        };
-                        
-                        fvg.midpoint = (fvg.top + fvg.bottom) / 2;
-                        const formedRSI = rsiValues[i] || 50;
-                        const gapSize = fvg.top - fvg.bottom;
-                        const buffer = gapSize * bearishSlBufferRatio;
-                        const riskPerUnit = Math.abs((fvg.top + buffer) - fvg.midpoint);
-                        
-                        const step = staticData.qtyStep;
-                        let units = riskAmount / riskPerUnit;
-                        units = Math.floor(units / step) * step;
-                        units = Number(units.toFixed(3));
-                        const minQty = Math.ceil((staticData.minNotional / fvg.midpoint) / staticData.qtyStep) * staticData.qtyStep;
-
-                        let isValid = true;
-                        let rejectReason = "";
-
-                        if (formedRSI >= rsiBearishMax || formedRSI <= rsiBearishMin) {
-                            isValid = false;
-                            rejectReason = `RSI LIMIT (${formedRSI.toFixed(1)})`;
-                        } else if (riskPerUnit < minRiskPerUnit || riskPerUnit > maxRiskPerUnit) {
-                            isValid = false;
-                            rejectReason = 'RISK LIMIT';
-                        } else if (units < minQty || units <= 0) {
-                            isValid = false;
-                            rejectReason = 'MIN QTY LIMIT';
-                        }
-
-                        if (!isValid) {
-                            fvg.filled = true;
-                            fvg.filledAt = c3.time;
-                            fvg.status = 'skipped';
-                            fvg.rejectReason = rejectReason;
-                            allFVGs.push(fvg);
-                        } else {
-                            fvg.units = units;
-                            fvg.tp = Number((fvg.midpoint - (riskPerUnit * rr)).toFixed(pricePrecision));
-                            fvg.sl = Number((fvg.midpoint + riskPerUnit).toFixed(pricePrecision));
+                } else if (c3.high < c1.low) {
+                    const gapSize = c1.low - c3.high;
+                    if (gapSize > (c3.close * minGapSizeRatio) && c2BodyRatio >= minC2BodyRatio) {
+                        const currentEma = ema200[i] || 0;
+                        if (currentEma === 0 || c3.close < currentEma) {
+                            const fvg = {
+                                top: c1.low,
+                                bottom: c3.high,
+                                direction: "bearish",
+                                formedAt: i,
+                                filled: false,
+                                startTime: c1.time,
+                                endTime: c3.time
+                            };
                             
-                            allFVGs.push(fvg);
-                            activeFVGs.forEach(oldFvg => {
-                                oldFvg.filled = true;
-                                oldFvg.filledAt = c3.time;
-                            });
-                            activeFVGs = [fvg];
+                            fvg.midpoint = (fvg.top + fvg.bottom) / 2;
+                            const formedRSI = rsiValues[i] || 50;
+                            const gapSizeVal = fvg.top - fvg.bottom;
+                            const buffer = gapSizeVal * bearishSlBufferRatio;
+                            const riskPerUnit = Math.abs((fvg.top + buffer) - fvg.midpoint);
+                            
+                            const step = staticData.qtyStep;
+                            let units = riskAmount / riskPerUnit;
+                            units = Math.floor(units / step) * step;
+                            units = Number(units.toFixed(3));
+                            const minQty = Math.ceil((staticData.minNotional / fvg.midpoint) / staticData.qtyStep) * staticData.qtyStep;
 
-                            if (activeTrade && activeTrade.status === "pending") {
-                                activeTrade = null;
+                            let isValid = true;
+                            let rejectReason = "";
+
+                            if (formedRSI >= rsiBearishMax || formedRSI <= rsiBearishMin) {
+                                isValid = false;
+                                rejectReason = `RSI LIMIT (${formedRSI.toFixed(1)})`;
+                            } else if (riskPerUnit < minRiskPerUnit || riskPerUnit > maxRiskPerUnit) {
+                                isValid = false;
+                                rejectReason = 'RISK LIMIT';
+                            } else if (units < minQty || units <= 0) {
+                                isValid = false;
+                                rejectReason = 'MIN QTY LIMIT';
+                            }
+
+                            if (!isValid) {
+                                fvg.filled = true;
+                                fvg.filledAt = c3.time;
+                                fvg.status = 'skipped';
+                                fvg.rejectReason = rejectReason;
+                                allFVGs.push(fvg);
+                            } else {
+                                fvg.units = units;
+                                fvg.tp = Number((fvg.midpoint - (riskPerUnit * rr)).toFixed(pricePrecision));
+                                fvg.sl = Number((fvg.midpoint + riskPerUnit).toFixed(pricePrecision));
+                                
+                                allFVGs.push(fvg);
+                                activeFVGs.forEach(oldFvg => {
+                                    oldFvg.filled = true;
+                                    oldFvg.filledAt = c3.time;
+                                });
+                                activeFVGs = [fvg];
+
+                                if (activeTrade && activeTrade.status === "pending") {
+                                    activeTrade = null;
+                                }
                             }
                         }
                     }
