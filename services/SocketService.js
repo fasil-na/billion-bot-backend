@@ -1262,6 +1262,36 @@ console.log(positions,'positions=======')
                                   } finally {
                                       this.updateState(configId, { isClosingPosition: false });
                                   }
+                              } else {
+                                  // Exchange DID NOT close it (likely due to Mark Price buffering wicks).
+                                  // Force Market Close based on LTP
+                                  this.updateState(configId, { isClosingPosition: true });
+                                  await LoggerService.log("warn", `⚡ Exchange did NOT trigger ${reason} (Mark Price mismatch). FORCING Market Close for ${activeTrade.pair}!`, "SocketService", { configId, pair: activeTrade.pair });
+                                  
+                                  try {
+                                      // Force close the position on the exchange
+                                      await TradeService.closePosition({ positionId: activePos.id || activePos.position_id });
+                                      
+                                      const targetPrice = reason === "SL Hit" ? sl : tp;
+                                      const { profit, fee, pnlPercent, grossProfit, entryFee, exitFee } = calculateTradeProfit(freshState.activeTrade, targetPrice);
+                                      
+                                      const closedTrade = {
+                                        ...freshState.activeTrade,
+                                        status: "closed",
+                                        exitPrice: targetPrice,
+                                        exitTime: dayjs().tz("Asia/Kolkata").format(),
+                                        exitReason: `Forced Market Close (${reason} - LTP)`,
+                                        profit, fee, pnlPercent, grossProfit, entryFee, exitFee
+                                      };
+                                      
+                                      await TradeHistoryService.saveTrade(closedTrade);
+                                      this.updateState(configId, { activeTrade: null, currentPosition: null });
+                                      this.io.emit("trade-history-update", closedTrade);
+                                  } catch (closeErr) {
+                                      await LoggerService.log("error", `❌ Failed to force market close for ${activeTrade.pair}: ${closeErr.message}`, "SocketService", { configId, pair: activeTrade.pair });
+                                  } finally {
+                                      this.updateState(configId, { isClosingPosition: false });
+                                  }
                               }
                           }
                       }

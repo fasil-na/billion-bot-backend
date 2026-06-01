@@ -54,7 +54,25 @@ export const STRATEGY_CONFIGS = {
 
 
 
-    'b-eth_usdt': {
+    'b-eth_usdt': 
+    // {
+    //     riskRewardRatio: 1.5,
+    //     fvgExpiryCandles: 15,
+    //     rangeLookback: 10,
+    //     minGapSizeRatio: 0.00004,
+    //     minC2BodyRatio: 0.0011,
+    //     rsiPeriod: 17,
+    //     rsiBullishMin: 19,
+    //     rsiBullishMax: 75,
+    //     rsiBearishMin: 23,
+    //     rsiBearishMax: 72,
+    //     minRiskPerUnit: 3,
+    //     maxRiskPerUnit: 100,
+    //     bearishSlBufferRatio: 0.0023,
+    //     initialBalance: 5
+    // }
+
+      {
         riskRewardRatio: 1.5,
         fvgExpiryCandles: 15,
         rangeLookback: 10,
@@ -65,7 +83,7 @@ export const STRATEGY_CONFIGS = {
         rsiBullishMax: 75,
         rsiBearishMin: 23,
         rsiBearishMax: 72,
-        minRiskPerUnit: 3,
+        minRiskPerUnit: 5,
         maxRiskPerUnit: 100,
         bearishSlBufferRatio: 0.0023,
         initialBalance: 5
@@ -203,7 +221,8 @@ export class FVGStrategy {
                             }
                         }
                     }
-                } else if (c3.high < c1.low) {
+                }
+                 else if (c3.high < c1.low) {
                     const gapSize = c1.low - c3.high;
                     if (gapSize > (c3.close * minGapSizeRatio) && c2BodyRatio >= minC2BodyRatio) {
                         const currentEma = ema200[i] || 0;

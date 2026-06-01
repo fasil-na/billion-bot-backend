@@ -1,0 +1,7 @@
+The exact reason is the difference between how Backtesting engines work vs. Live Order Books.
+
+1. **The Backtest Hit TP Early:** Historical 1-minute data shows that Bitcoin spiked and touched your exact Take Profit price ($74047.8000) briefly *before* 04:55:00. The backtester assumes 100% perfect execution, meaning the moment the price touches your limit, it immediately closes the trade. 
+2. **Freeing Up the Bot:** Because the backtester simulated the LONG trade closing early (during that first spike), the bot was now "empty-handed" and free to scan for new setups. When the new FVG formed at 04:55:00, the bot took the SHORT trade because it had no active trades holding it back.
+3. **The Live Exchange Reality:** In your live account, your limit order was sitting at $74047.8000. When the market briefly spiked to that price early on, there wasn't enough buying volume at that exact level to fill *your* specific order in the queue. Your order was skipped, keeping the live trade open until a much larger push finally filled it at 06:00.
+
+Because the Live trade was stuck open, it couldn't take the 04:55 trade. But the Backtest, which closed the trade instantly on the first touch, was free to take it.
