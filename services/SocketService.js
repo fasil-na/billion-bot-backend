@@ -1272,7 +1272,26 @@ console.log(positions,'positions=======')
                                       // Force close the position on the exchange
                                       await TradeService.closePosition({ positionId: activePos.id || activePos.position_id });
                                       
-                                      const targetPrice = reason === "SL Hit" ? sl : tp;
+                                      let targetPrice = reason === "SL Hit" ? sl : tp;
+                                      
+                                      try {
+                                          await new Promise((r) => setTimeout(r, 2000));
+                                          const orders = await TradeService.getOrders();
+                                          if (Array.isArray(orders)) {
+                                              const exitOrder = orders.sort((a, b) => dayjs(b.updated_at).valueOf() - dayjs(a.updated_at).valueOf()).find(o => 
+                                                  (o.pair === activeTrade.pair || o.symbol === activeTrade.pair) &&
+                                                  o.status === "filled" &&
+                                                  o.avg_price > 0 &&
+                                                  dayjs(o.updated_at).valueOf() > dayjs().valueOf() - 15000 // within last 15s
+                                              );
+                                              if (exitOrder) {
+                                                  targetPrice = exitOrder.avg_price;
+                                              }
+                                          }
+                                      } catch (err) {
+                                          console.error("Failed to fetch forced exit price", err);
+                                      }
+                                      
                                       const { profit, fee, pnlPercent, grossProfit, entryFee, exitFee } = calculateTradeProfit(freshState.activeTrade, targetPrice);
                                       
                                       const closedTrade = {
