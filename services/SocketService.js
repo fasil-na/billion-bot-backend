@@ -501,6 +501,17 @@ console.log(entryOrder,'entryOrder=======')
           registry.candleIndexMap.set(data.time, registry.candles.length);
           registry.candles.push(data);
 
+          if (isNewCandleTrigger) {
+              // Await the history sync BEFORE strategy execution to ensure 100% parity with backtests.
+              const resMs = parseInt(channel.match(/_(\d+[A-Za-z]+)-futures/)?.[1] || "15") * 60 * 1000;
+              const expectedClosedTime = data.time - resMs;
+              try {
+                  await this.syncHistoricalCandles(channel, expectedClosedTime);
+              } catch (err) {
+                  LoggerService.log("error", `Background sync failed: ${err.message}`, "SocketService");
+              }
+          }
+
           const targetConfigs = this.channelConfigs.get(channel);
      
           if (targetConfigs && isNewCandleTrigger) {
@@ -535,17 +546,6 @@ console.log(entryOrder,'entryOrder=======')
                 }
               });
             }
-          }
-
-          if (isNewCandleTrigger) {
-              // Await the history sync AFTER strategy execution.
-              // This guarantees lightning-fast execution using websocket data, 
-              // while keeping historical indicators perfectly aligned for future candles.
-              const resMs = parseInt(channel.match(/_(\d+[A-Za-z]+)-futures/)?.[1] || "15") * 60 * 1000;
-              const expectedClosedTime = data.time - resMs;
-              this.syncHistoricalCandles(channel, expectedClosedTime).catch(err => {
-                 LoggerService.log("error", `Background sync failed: ${err.message}`, "SocketService");
-              });
           }
         }
 
