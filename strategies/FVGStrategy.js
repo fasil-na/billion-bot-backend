@@ -83,7 +83,7 @@ export const STRATEGY_CONFIGS = {
         rsiBullishMax: 75,
         rsiBearishMin: 23,
         rsiBearishMax: 72,
-        minRiskPerUnit: 5,
+        minRiskPerUnit: 0.5,
         maxRiskPerUnit: 100,
         bearishSlBufferRatio: 0.0023,
         initialBalance: 5
@@ -310,39 +310,22 @@ export class FVGStrategy {
                 }
 
                 if (activeTrade.status === "open") {
-                    const hitSL = isBuy ? curr.low <= (activeTrade.sl || 0) : curr.high >= (activeTrade.sl || Infinity);
-                    const hitTP = isBuy ? curr.high >= (activeTrade.tp || Infinity) : curr.low <= (activeTrade.tp || 0);
-
-                    if (hitSL || hitTP) {
+                    const exitInfo = this.checkIntraCandleExit(activeTrade, curr, subCandles, false);
+                    if (exitInfo) {
                         activeTrade.status = "closed";
-                        activeTrade.exitTime = dayjs(curr.time).tz(TRADE_TIMEZONE).format();
+                        activeTrade.exitTime = exitInfo.time;
+                        activeTrade.exitPrice = exitInfo.price;
+                        activeTrade.exitReason = exitInfo.reason;
 
-                        if (hitSL) {
-                            activeTrade.exitPrice = activeTrade.sl || (isBuy ? curr.low : curr.high);
-                            activeTrade.exitReason = "Stop Loss";
-                        } else if (hitTP) {
-                            activeTrade.exitPrice = activeTrade.tp || (isBuy ? curr.high : curr.low);
-                            activeTrade.exitReason = "Take Profit";
-                        }
+                        const pnlResult = this.calculatePnL(activeTrade, activeTrade.exitPrice, balance);
 
-                        const units = activeTrade.units || 0;
-                        let grossProfit = 0;
-                        if (isBuy) {
-                            grossProfit = (activeTrade.exitPrice - activeTrade.entryPrice) * units;
-                        } else {
-                            grossProfit = (activeTrade.entryPrice - activeTrade.exitPrice) * units;
-                        }
-
-                        const entryFee = Math.ceil(activeTrade.entryPrice * units * MAKER_FEE_RATE * 1000) / 1000;
-                        const exitFee = Math.ceil(activeTrade.exitPrice * units * TAKER_FEE_RATE * 1000) / 1000;
-
-                        activeTrade.grossProfit = Number(grossProfit.toFixed(3));
-                        activeTrade.entryFee = entryFee;
-                        activeTrade.exitFee = exitFee;
-                        activeTrade.fee = entryFee + exitFee;
-                        activeTrade.profit = grossProfit - entryFee - exitFee;
-                        activeTrade.pnlPercent = (activeTrade.profit / balance) * 100;
-                        balance += activeTrade.profit;
+                        activeTrade.grossProfit = Number(pnlResult.grossProfit.toFixed(4));
+                        activeTrade.entryFee = pnlResult.entryFee;
+                        activeTrade.exitFee = pnlResult.exitFee;
+                        activeTrade.fee = pnlResult.fee;
+                        activeTrade.profit = pnlResult.profit;
+                        activeTrade.pnlPercent = (pnlResult.profit / balance) * 100;
+                        balance += pnlResult.profit;
                         trades.push({ ...activeTrade });
                         activeTrade = null;
                         lastExitIndex = i;
@@ -409,7 +392,7 @@ export class FVGStrategy {
                         };
 
                         if (activeTrade.status === "open") {
-                            const exitInfo = this.checkIntraCandleExit(activeTrade, curr, subCandles);
+                            const exitInfo = this.checkIntraCandleExit(activeTrade, curr, subCandles, true);
                             if (exitInfo) {
                                 activeTrade.status = "closed";
                                 activeTrade.exitPrice = exitInfo.price;
@@ -480,7 +463,7 @@ export class FVGStrategy {
                         };
 
                         if (activeTrade.status === "open") {
-                            const exitInfo = this.checkIntraCandleExit(activeTrade, curr, subCandles);
+                            const exitInfo = this.checkIntraCandleExit(activeTrade, curr, subCandles, true);
                             if (exitInfo) {
                                 activeTrade.status = "closed";
                                 activeTrade.exitPrice = exitInfo.price;
@@ -546,35 +529,64 @@ export class FVGStrategy {
         };
     }
 
-    checkIntraCandleExit(trade, mainCandle, subCandles) {
+    checkIntraCandleExit(trade, mainCandle, subCandles, isEntryCandle = false) {
         const isBuy = trade.direction === "buy";
         const sl = trade.sl || 0;
         const tp = trade.tp || 0;
+        const entryPrice = trade.entryPrice;
 
         if (subCandles && subCandles.length > 0) {
-            const entryUnix = dayjs(trade.entryTime).valueOf();
             const res = trade.resolution || DEFAULT_RESOLUTION;
             const intervalMs = Number(res) * 60 * 1000;
             const candleEndUnix = mainCandle.time + intervalMs;
-            const relevantSubs = subCandles.filter(s => s.time >= entryUnix && s.time < candleEndUnix);
+            const relevantSubs = subCandles.filter(s => s.time >= mainCandle.time && s.time < candleEndUnix);
+
+            let entryHit = !isEntryCandle;
 
             for (const sub of relevantSubs) {
-                if (isBuy) {
-                    if (sub.low <= sl) return { price: sl, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss (Sub)" };
-                    if (sub.high >= tp) return { price: tp, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Take Profit (Sub)" };
-                } else {
-                    if (sub.high >= sl) return { price: sl, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss (Sub)" };
-                    if (sub.low <= tp) return { price: tp, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Take Profit (Sub)" };
+                if (!entryHit) {
+                    if (isBuy && sub.low <= entryPrice) {
+                        entryHit = true;
+                    } else if (!isBuy && sub.high >= entryPrice) {
+                        entryHit = true;
+                    }
+                }
+
+                if (entryHit) {
+                    if (isBuy) {
+                        const hitSL = sub.low <= sl;
+                        const hitTP = sub.high >= tp;
+                        if (hitSL && hitTP) {
+                            if (sub.close < sub.open) return { price: tp, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Take Profit (Sub)" };
+                            else return { price: sl, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss (Sub)" };
+                        } else if (hitSL) return { price: sl, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss (Sub)" };
+                        else if (hitTP) return { price: tp, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Take Profit (Sub)" };
+                    } else {
+                        const hitSL = sub.high >= sl;
+                        const hitTP = sub.low <= tp;
+                        if (hitSL && hitTP) {
+                            if (sub.close > sub.open) return { price: tp, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Take Profit (Sub)" };
+                            else return { price: sl, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss (Sub)" };
+                        } else if (hitSL) return { price: sl, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss (Sub)" };
+                        else if (hitTP) return { price: tp, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Take Profit (Sub)" };
+                    }
                 }
             }
+            if (isEntryCandle && !entryHit) return null;
         }
 
         if (isBuy) {
-            if (mainCandle.low <= sl) return { price: sl, time: dayjs(mainCandle.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss" };
-            if (mainCandle.high >= tp) return { price: tp, time: dayjs(mainCandle.time).tz(TRADE_TIMEZONE).format(), reason: "Take Profit" };
+            const hitSL = mainCandle.low <= sl;
+            const hitTP = mainCandle.high >= tp;
+            if (hitSL && hitTP) return { price: sl, time: dayjs(mainCandle.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss" };
+            else if (hitSL) return { price: sl, time: dayjs(mainCandle.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss" };
+            else if (hitTP) return { price: tp, time: dayjs(mainCandle.time).tz(TRADE_TIMEZONE).format(), reason: "Take Profit" };
         } else {
-            if (mainCandle.high >= sl) return { price: sl, time: dayjs(mainCandle.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss" };
-            if (mainCandle.low <= tp) return { price: tp, time: dayjs(mainCandle.time).tz(TRADE_TIMEZONE).format(), reason: "Take Profit" };
+            const hitSL = mainCandle.high >= sl;
+            const hitTP = mainCandle.low <= tp;
+            if (hitSL && hitTP) return { price: sl, time: dayjs(mainCandle.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss" };
+            else if (hitSL) return { price: sl, time: dayjs(mainCandle.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss" };
+            else if (hitTP) return { price: tp, time: dayjs(mainCandle.time).tz(TRADE_TIMEZONE).format(), reason: "Take Profit" };
         }
         return null;
     }
@@ -608,7 +620,7 @@ export class FVGStrategy {
         // candles.length - 1 is the new opening candle, candles.length - 2 is the most recently closed candle
         const recentlyClosedCandleTime = candles[candles.length - 2].time;
 
-        if (tradeEntryUnix < recentlyClosedCandleTime) {
+        if (tradeEntryUnix <= recentlyClosedCandleTime) {
             return { matched: false };
         }
 
