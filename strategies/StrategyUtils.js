@@ -1,4 +1,9 @@
-// StrategyUtils.js
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc.js';
+import timezone from 'dayjs/plugin/timezone.js';
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
 export function calculateEMA(data, period) {
     if (!data || data.length < period) return [];
     const k = 2 / (period + 1);
@@ -110,4 +115,83 @@ export function calculateTradeProfit(
         points: parseFloat((exitPrice - trade.entryPrice).toFixed(3)),
         pnlPercent: parseFloat(pnlPercent.toFixed(2))
     };
+}
+
+export function calculatePnL(trade, exitPrice, balance) {
+    const units = trade.units || 0;
+    const grossProfit = trade.direction === "buy"
+        ? (exitPrice - trade.entryPrice) * units
+        : (trade.entryPrice - exitPrice) * units;
+
+    const MAKER_FEE_RATE = 0.0003;
+    const TAKER_FEE_RATE = 0.0006;
+    const entryFee = Math.ceil(trade.entryPrice * units * MAKER_FEE_RATE * 1000) / 1000;
+    const exitFee = Math.ceil(exitPrice * units * TAKER_FEE_RATE * 1000) / 1000;
+    const totalFee = entryFee + exitFee;
+
+    return { profit: grossProfit - totalFee, fee: totalFee, grossProfit, entryFee, exitFee };
+}
+
+export function checkIntraCandleExit(trade, mainCandle, subCandles, isEntryCandle = false, TRADE_TIMEZONE = 'Asia/Kolkata', DEFAULT_RESOLUTION = '15', entryType = 'limit') {
+    const isBuy = trade.direction === "buy";
+    const sl = trade.sl || 0;
+    const tp = trade.tp || 0;
+    const entryPrice = trade.entryPrice;
+
+    if (subCandles && subCandles.length > 0) {
+        const res = trade.resolution || DEFAULT_RESOLUTION;
+        const intervalMs = Number(res) * 60 * 1000;
+        const candleEndUnix = mainCandle.time + intervalMs;
+        const relevantSubs = subCandles.filter(s => s.time >= mainCandle.time && s.time < candleEndUnix);
+
+        let entryHit = !isEntryCandle;
+
+        for (const sub of relevantSubs) {
+            if (!entryHit) {
+                if (entryType === 'limit') {
+                    if (isBuy && sub.low <= entryPrice) entryHit = true;
+                    else if (!isBuy && sub.high >= entryPrice) entryHit = true;
+                } else if (entryType === 'stop') {
+                    if (isBuy && sub.high >= entryPrice) entryHit = true;
+                    else if (!isBuy && sub.low <= entryPrice) entryHit = true;
+                }
+            }
+
+            if (entryHit) {
+                if (isBuy) {
+                    const hitSL = sub.low <= sl;
+                    const hitTP = sub.high >= tp;
+                    if (hitSL && hitTP) {
+                        if (sub.close < sub.open) return { price: tp, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Take Profit (Sub)" };
+                        else return { price: sl, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss (Sub)" };
+                    } else if (hitSL) return { price: sl, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss (Sub)" };
+                    else if (hitTP) return { price: tp, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Take Profit (Sub)" };
+                } else {
+                    const hitSL = sub.high >= sl;
+                    const hitTP = sub.low <= tp;
+                    if (hitSL && hitTP) {
+                        if (sub.close > sub.open) return { price: tp, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Take Profit (Sub)" };
+                        else return { price: sl, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss (Sub)" };
+                    } else if (hitSL) return { price: sl, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss (Sub)" };
+                    else if (hitTP) return { price: tp, time: dayjs(sub.time).tz(TRADE_TIMEZONE).format(), reason: "Take Profit (Sub)" };
+                }
+            }
+        }
+        if (isEntryCandle && !entryHit) return null;
+    }
+
+    if (isBuy) {
+        const hitSL = mainCandle.low <= sl;
+        const hitTP = mainCandle.high >= tp;
+        if (hitSL && hitTP) return { price: sl, time: dayjs(mainCandle.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss" };
+        else if (hitSL) return { price: sl, time: dayjs(mainCandle.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss" };
+        else if (hitTP) return { price: tp, time: dayjs(mainCandle.time).tz(TRADE_TIMEZONE).format(), reason: "Take Profit" };
+    } else {
+        const hitSL = mainCandle.high >= sl;
+        const hitTP = mainCandle.low <= tp;
+        if (hitSL && hitTP) return { price: sl, time: dayjs(mainCandle.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss" };
+        else if (hitSL) return { price: sl, time: dayjs(mainCandle.time).tz(TRADE_TIMEZONE).format(), reason: "Stop Loss" };
+        else if (hitTP) return { price: tp, time: dayjs(mainCandle.time).tz(TRADE_TIMEZONE).format(), reason: "Take Profit" };
+    }
+    return null;
 }

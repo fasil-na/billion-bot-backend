@@ -111,19 +111,21 @@ export const runBacktest = async (req, res) => {
         const candles = resMain.data.sort((a, b) => a.time - b.time);
         const subCandles = Array.isArray(resSub.data) ? resSub.data.sort((a, b) => a.time - b.time) : [];
 
-        const strategy = strategies['fvg-imbalance'];
-        if (!strategy) return res.status(404).json({ error: 'FVG strategy not found' });
+        const strategyId = req.body.strategyId || req.query.strategyId || 'fvg-imbalance';
+        const strategy = strategies[strategyId];
+        if (!strategy) return res.status(404).json({ error: `Strategy ${strategyId} not found` });
 
         const riskAmount = riskAmountFromReq;
 
-        // 1. Run strategy simulation ONLY for indicators (FVG boxes)
+        // 1. Run strategy simulation
         const simulationResult = strategy.run(candles, {
             pair,
             leverage: 1, // Mock liveConfig?.leverage
             riskAmount: riskAmount,
             simulationStartUnix: simulationStartUnix,
             type: 'backtest',
-            resolution: resolution
+            resolution: resolution,
+            session: req.body.session || req.query.session || 'gold'
         }, subCandles);
 
         // 2. Fetch REAL executed trades from Database for this pair/day
@@ -134,7 +136,7 @@ export const runBacktest = async (req, res) => {
             pair,
             riskAmount,
             trades: realTrades,
-            simulatedTrades: (simulationResult.trades || []).sort((a, b) => new Date(b.entryTime || b.time).getTime() - new Date(a.entryTime || a.time).getTime()),
+            simulatedTrades: (simulationResult.simulatedTrades || simulationResult.trades || []).sort((a, b) => new Date(b.entryTime || b.time).getTime() - new Date(a.entryTime || a.time).getTime()),
             tradesCount: realTrades.length,
             dailyPnl: realTrades.reduce((a, t) => a + (t.profit || 0), 0),
             candles: candles.filter(c => c.time >= simulationStartUnix * 1000),
