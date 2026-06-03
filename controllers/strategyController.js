@@ -101,7 +101,7 @@ export const runBacktest = async (req, res) => {
 
         const [resMain, resSub] = await Promise.all([
             getPaginatedCandlesticks({ pair, from: fetchStart, to: end, resolution: resolution }),
-            getPaginatedCandlesticks({ pair, from: fetchStart, to: end, resolution: '1m' })
+            getPaginatedCandlesticks({ pair, from: fetchStart, to: end, resolution: '1' })
         ]);
 
         if (resMain.s !== 'ok' || !Array.isArray(resMain.data)) {
@@ -110,9 +110,10 @@ export const runBacktest = async (req, res) => {
 
         const candles = resMain.data.sort((a, b) => a.time - b.time);
         const subCandles = Array.isArray(resSub.data) ? resSub.data.sort((a, b) => a.time - b.time) : [];
-
-        const strategy = strategies['fvg-imbalance'];
-        if (!strategy) return res.status(404).json({ error: 'FVG strategy not found' });
+console.log(req.body,'req.body.strategyId====')
+        const reqStrategyId = req.body.strategyId || req.query.strategyId || 'fvg-imbalance';
+        const strategy = strategies[reqStrategyId];
+        if (!strategy) return res.status(404).json({ error: `Strategy ${reqStrategyId} not found` });
 
         const riskAmount = riskAmountFromReq;
 

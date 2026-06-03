@@ -9,48 +9,48 @@ dayjs.extend(timezone);
 export const STRATEGY_CONFIGS = {
     'b-btc_usdt':
 
-    // {
-    //     riskRewardRatio: 1.8,
-    //     fvgExpiryCandles: 20,
-    //     rangeLookback: 10,
-    //     minGapSizeRatio: 0.0008,
-    //     minC2BodyRatio: 0.001,
-    //     rsiPeriod: 14,
-    //     rsiBullishMin: 0,
-    //     rsiBullishMax: 100,
-    //     rsiBearishMin: 0,
-    //     rsiBearishMax: 100,
-    //     minRiskPerUnit: 60,
-    //     maxRiskPerUnit: 200,
-    //     bearishSlBufferRatio: 0.001,
-    //     initialBalance: 1000
-    // },
-{
-        riskRewardRatio: 4.5,        // higher RR → compensate more SL hits
-
-        fvgExpiryCandles: 50,        // allow older FVGs (more trades)
-
-        rangeLookback: 5,            // smaller range → more signals
-
-        minGapSizeRatio: 0.00002,    // accept smaller gaps
-
-        minC2BodyRatio: 0.0006,      // weaker confirmation candle allowed
-
-        rsiPeriod: 12,               // faster RSI reaction
-
-        rsiBullishMin: 10,           // allow early entries
-        rsiBullishMax: 80,
-
-        rsiBearishMin: 15,
-        rsiBearishMax: 85,
-
-        minRiskPerUnit: 5,           // allow smaller moves
-        maxRiskPerUnit: 200,         // allow bigger volatility trades
-
-        bearishSlBufferRatio: 0.0007, // tighter SL → more trades, more SL hits
-
-        initialBalance: 5
+    {
+        riskRewardRatio: 3,
+        fvgExpiryCandles: 20,
+        rangeLookback: 10,
+        minGapSizeRatio: 0.0008,
+        minC2BodyRatio: 0.001,
+        rsiPeriod: 14,
+        rsiBullishMin: 0,
+        rsiBullishMax: 100,
+        rsiBearishMin: 0,
+        rsiBearishMax: 100,
+        minRiskPerUnit: 150,
+        maxRiskPerUnit: 550,
+        bearishSlBufferRatio: 0.001,
+        initialBalance: 1000
     },
+// {
+//         riskRewardRatio: 4.5,        // higher RR → compensate more SL hits
+
+//         fvgExpiryCandles: 50,        // allow older FVGs (more trades)
+
+//         rangeLookback: 5,            // smaller range → more signals
+
+//         minGapSizeRatio: 0.00002,    // accept smaller gaps
+
+//         minC2BodyRatio: 0.0006,      // weaker confirmation candle allowed
+
+//         rsiPeriod: 12,               // faster RSI reaction
+
+//         rsiBullishMin: 10,           // allow early entries
+//         rsiBullishMax: 80,
+
+//         rsiBearishMin: 15,
+//         rsiBearishMax: 85,
+
+//         minRiskPerUnit: 5,           // allow smaller moves
+//         maxRiskPerUnit: 200,         // allow bigger volatility trades
+
+//         bearishSlBufferRatio: 0.0007, // tighter SL → more trades, more SL hits
+
+//         initialBalance: 5
+//     },
 
 
 
@@ -72,7 +72,24 @@ export const STRATEGY_CONFIGS = {
     //     initialBalance: 5
     // }
 
-      {
+//   {
+//     riskRewardRatio: 2,
+//     fvgExpiryCandles: 25,
+//     rangeLookback: 12,
+//     minGapSizeRatio: 0.0015,
+//     minC2BodyRatio: 0.0012,
+//     rsiPeriod: 21,
+//     rsiBullishMin: 55,
+//     rsiBullishMax: 75,
+//     rsiBearishMin: 25,
+//     rsiBearishMax: 45,
+//     minRiskPerUnit: 3,
+//     maxRiskPerUnit: 50,
+//     bearishSlBufferRatio: 0.0025,
+//     initialBalance: 5
+// }
+
+ {
         riskRewardRatio: 1.5,
         fvgExpiryCandles: 15,
         rangeLookback: 10,
@@ -83,7 +100,7 @@ export const STRATEGY_CONFIGS = {
         rsiBullishMax: 75,
         rsiBearishMin: 23,
         rsiBearishMax: 72,
-        minRiskPerUnit: 0.5,
+        minRiskPerUnit: 5,
         maxRiskPerUnit: 100,
         bearishSlBufferRatio: 0.0023,
         initialBalance: 5
@@ -103,7 +120,6 @@ export class FVGStrategy {
     name = "Fair Value Gap Strategy";
     description = "Institutional imbalance detection with consequent encroachment entry logic.";
     run(candles, params, subCandles = []) {
-
         if (params.type === 'live') {
             return this.checkSignal(candles, params);
         }
@@ -134,10 +150,9 @@ export class FVGStrategy {
 
         const staticData = TradeService.STATIC_INSTRUMENTS[cleanPair] || TradeService.STATIC_INSTRUMENTS[params.pair] || TradeService.STATIC_INSTRUMENTS[DEFAULT_PAIR_KEY];
         const pricePrecision = staticData.priceStep.toString().split('.')[1]?.length || 0;
-
         const closes = candles.map(c => c.close);
         const rsiValues = calculateRSI(closes, rsiPeriod);
-        const ema200 = calculateEMA(closes, 200);
+        const ema200 = calculateEMA(closes, 150);
 
         const allFVGs = [];
         let activeFVGs = [];

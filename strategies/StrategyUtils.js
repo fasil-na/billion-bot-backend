@@ -111,3 +111,36 @@ export function calculateTradeProfit(
         pnlPercent: parseFloat(pnlPercent.toFixed(2))
     };
 }
+
+export function calculateATR(candles, period = 14) {
+    if (!candles || candles.length < period + 1) return new Array(candles.length).fill(0);
+    const atr = new Array(candles.length).fill(0);
+    const tr = new Array(candles.length).fill(0);
+
+    // Calculate True Range (TR)
+    for (let i = 1; i < candles.length; i++) {
+        const high = candles[i].high;
+        const low = candles[i].low;
+        const prevClose = candles[i - 1].close;
+        
+        tr[i] = Math.max(
+            high - low,
+            Math.abs(high - prevClose),
+            Math.abs(low - prevClose)
+        );
+    }
+
+    // First ATR is the simple average of the first 'period' TRs
+    let sumTR = 0;
+    for (let i = 1; i <= period; i++) {
+        sumTR += tr[i];
+    }
+    atr[period] = sumTR / period;
+
+    // Wilder's Smoothing for the rest
+    for (let i = period + 1; i < candles.length; i++) {
+        atr[i] = ((atr[i - 1] * (period - 1)) + tr[i]) / period;
+    }
+
+    return atr;
+}
