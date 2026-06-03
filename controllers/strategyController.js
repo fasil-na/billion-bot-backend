@@ -38,7 +38,7 @@ async function getCandlesticks(params) {
         // };
         // const response = await axios.get(COINDCX_URL, { params });
         // let data = response.data;
-         return response.data;
+        return response.data;
     } catch (error) {
         console.error('Error fetching candlesticks:', error.message);
         return { s: 'error', data: [] };
@@ -47,23 +47,22 @@ async function getCandlesticks(params) {
 
 async function getPaginatedCandlesticks(params, maxDataPointsPerRequest = 2000) {
     const { from, to, resolution } = params;
-    
+
     // Determine chunk size based on resolution
     const resValue = parseInt(resolution) || 1;
     const chunkSeconds = resValue * 60 * (maxDataPointsPerRequest - 50); // Leave a small buffer
-    
+
     const allCandles = [];
     const promises = [];
 
     for (let currentFrom = from; currentFrom < to; currentFrom += chunkSeconds) {
         let currentTo = Math.min(currentFrom + chunkSeconds, to);
-        
+
         const res = await getCandlesticks({ ...params, from: currentFrom, to: currentTo });
         if (res && res.s === 'ok' && Array.isArray(res.data)) {
             allCandles.push(...res.data);
-            console.log(`[Backtest Fetch] Resolution: ${resolution}, Date: ${dayjs(currentFrom * 1000).format('YYYY-MM-DD')}, Fetched: ${res.data.length} candles`);
         }
-        
+
         // Small delay to prevent CoinDCX rate limits (HTTP 429)
         await new Promise(resolve => setTimeout(resolve, 200));
     }
