@@ -423,9 +423,17 @@ class SocketService {
             );
 console.log(entryOrder,'entryOrder=======')
             if (entryOrder) {
-                const slMissing = !entryOrder.stop_loss_price || entryOrder.stop_loss_price === 0;
-                const tpMissing = !entryOrder.take_profit_price || entryOrder.take_profit_price === 0;
-                console.log(slMissing,'slMissing-----')
+                let slMissing = !entryOrder.stop_loss_price || entryOrder.stop_loss_price === 0;
+                let tpMissing = !entryOrder.take_profit_price || entryOrder.take_profit_price === 0;
+                
+                if (slMissing || tpMissing) {
+                    const isActive = (status) => !["filled", "cancelled", "rejected"].includes(status?.toLowerCase());
+                    const hasActiveSL = orders.some(o => o.pair === state.activeTrade.pair && o.order_type === "stop_market" && isActive(o.status));
+                    const hasActiveTP = orders.some(o => o.pair === state.activeTrade.pair && o.order_type === "take_profit_market" && isActive(o.status));
+                    
+                    if (hasActiveSL) slMissing = false;
+                    if (hasActiveTP) tpMissing = false;
+                }
                 if (slMissing || tpMissing) {
                     const missingType = slMissing && tpMissing ? "SL & TP" : (slMissing ? "Stop Loss" : "Take Profit");
                     await LoggerService.log(
@@ -773,9 +781,11 @@ console.log(positions,'positions=======')
 
         if (exitPrice) {
           if (exitOrder) {
-            tradeToClose.exitReason = `Exchange Auto-Closed (${
-              exitOrder.order_type === "stop_market" ? "SL Hit" : "TP Hit"
-            })`;
+            let reason = exitOrder.order_type === "stop_market" ? "SL Hit" : "TP Hit";
+            if (exitOrder.order_type === "market_order" || exitOrder.order_type === "market") {
+              reason = "Emergency Protection Close";
+            }
+            tradeToClose.exitReason = `Exchange Auto-Closed (${reason})`;
           }
 
           const { profit, fee, pnlPercent, grossProfit, entryFee, exitFee } =
@@ -1264,53 +1274,7 @@ console.log(positions,'positions=======')
                                   }
                               } else {
                                   // Exchange DID NOT close it (likely due to Mark Price buffering wicks).
-                                  // Force Market Close based on LTP
-                                  this.updateState(configId, { isClosingPosition: true });
-                                  await LoggerService.log("warn", `⚡ Exchange did NOT trigger ${reason} (Mark Price mismatch). FORCING Market Close for ${activeTrade.pair}!`, "SocketService", { configId, pair: activeTrade.pair });
-                                  
-                                  try {
-                                      // Force close the position on the exchange
-                                      await TradeService.closePosition({ positionId: activePos.id || activePos.position_id });
-                                      
-                                      let targetPrice = reason === "SL Hit" ? sl : tp;
-                                      
-                                      try {
-                                          await new Promise((r) => setTimeout(r, 2000));
-                                          const orders = await TradeService.getOrders();
-                                          if (Array.isArray(orders)) {
-                                              const exitOrder = orders.sort((a, b) => dayjs(b.updated_at).valueOf() - dayjs(a.updated_at).valueOf()).find(o => 
-                                                  (o.pair === activeTrade.pair || o.symbol === activeTrade.pair) &&
-                                                  o.status === "filled" &&
-                                                  o.avg_price > 0 &&
-                                                  dayjs(o.updated_at).valueOf() > dayjs().valueOf() - 15000 // within last 15s
-                                              );
-                                              if (exitOrder) {
-                                                  targetPrice = exitOrder.avg_price;
-                                              }
-                                          }
-                                      } catch (err) {
-                                          console.error("Failed to fetch forced exit price", err);
-                                      }
-                                      
-                                      const { profit, fee, pnlPercent, grossProfit, entryFee, exitFee } = calculateTradeProfit(freshState.activeTrade, targetPrice);
-                                      
-                                      const closedTrade = {
-                                        ...freshState.activeTrade,
-                                        status: "closed",
-                                        exitPrice: targetPrice,
-                                        exitTime: dayjs().tz("Asia/Kolkata").format(),
-                                        exitReason: `Forced Market Close (${reason} - LTP)`,
-                                        profit, fee, pnlPercent, grossProfit, entryFee, exitFee
-                                      };
-                                      
-                                      await TradeHistoryService.saveTrade(closedTrade);
-                                      this.updateState(configId, { activeTrade: null, currentPosition: null });
-                                      this.io.emit("trade-history-update", closedTrade);
-                                  } catch (closeErr) {
-                                      await LoggerService.log("error", `❌ Failed to force market close for ${activeTrade.pair}: ${closeErr.message}`, "SocketService", { configId, pair: activeTrade.pair });
-                                  } finally {
-                                      this.updateState(configId, { isClosingPosition: false });
-                                  }
+                                  await LoggerService.log("info", `⚡ Exchange did NOT trigger ${reason} (Mark Price mismatch). Ignoring LTP wick and keeping position open.`, "SocketService", { configId, pair: activeTrade.pair });
                               }
                           }
                       }

@@ -19,7 +19,7 @@ export const STRATEGY_CONFIGS = {
         rsiBullishMax: 82,
         rsiBearishMin: 25,
         rsiBearishMax: 80,
-        minRiskPerUnit: 3,
+        minRiskPerUnit: 5,
         maxRiskPerUnit: 80,
         bearishSlBufferRatio: 0.0015,
         initialBalance: 50
