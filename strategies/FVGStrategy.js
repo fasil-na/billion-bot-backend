@@ -8,86 +8,41 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 export const STRATEGY_CONFIGS = {
     'b-btc_usdt':
-
-    // {
-    //     riskRewardRatio: 1.8,
-    //     fvgExpiryCandles: 20,
-    //     rangeLookback: 10,
-    //     minGapSizeRatio: 0.0008,
-    //     minC2BodyRatio: 0.001,
-    //     rsiPeriod: 14,
-    //     rsiBullishMin: 0,
-    //     rsiBullishMax: 100,
-    //     rsiBearishMin: 0,
-    //     rsiBearishMax: 100,
-    //     minRiskPerUnit: 60,
-    //     maxRiskPerUnit: 200,
-    //     bearishSlBufferRatio: 0.001,
-    //     initialBalance: 1000
-    // },
 {
-        riskRewardRatio: 4.5,        // higher RR → compensate more SL hits
-
-        fvgExpiryCandles: 50,        // allow older FVGs (more trades)
-
-        rangeLookback: 5,            // smaller range → more signals
-
-        minGapSizeRatio: 0.00002,    // accept smaller gaps
-
-        minC2BodyRatio: 0.0006,      // weaker confirmation candle allowed
-
-        rsiPeriod: 12,               // faster RSI reaction
-
-        rsiBullishMin: 10,           // allow early entries
-        rsiBullishMax: 80,
-
-        rsiBearishMin: 15,
-        rsiBearishMax: 85,
-
-        minRiskPerUnit: 5,           // allow smaller moves
-        maxRiskPerUnit: 200,         // allow bigger volatility trades
-
-        bearishSlBufferRatio: 0.0007, // tighter SL → more trades, more SL hits
-
-        initialBalance: 5
+        riskRewardRatio: 1.9,
+        fvgExpiryCandles: 60,
+        rangeLookback: 10,
+        minGapSizeRatio: 0.00005,
+        minC2BodyRatio: 0.0006,
+        rsiPeriod: 17,
+        rsiBullishMin: 10,
+        rsiBullishMax: 82,
+        rsiBearishMin: 25,
+        rsiBearishMax: 80,
+        minRiskPerUnit: 3,
+        maxRiskPerUnit: 80,
+        bearishSlBufferRatio: 0.0015,
+        initialBalance: 50
     },
 
 
-
-    'b-eth_usdt': 
-    // {
-    //     riskRewardRatio: 1.5,
-    //     fvgExpiryCandles: 15,
-    //     rangeLookback: 10,
-    //     minGapSizeRatio: 0.00004,
-    //     minC2BodyRatio: 0.0011,
-    //     rsiPeriod: 17,
-    //     rsiBullishMin: 19,
-    //     rsiBullishMax: 75,
-    //     rsiBearishMin: 23,
-    //     rsiBearishMax: 72,
-    //     minRiskPerUnit: 3,
-    //     maxRiskPerUnit: 100,
-    //     bearishSlBufferRatio: 0.0023,
-    //     initialBalance: 5
-    // }
-
-      {
-        riskRewardRatio: 1.5,
-        fvgExpiryCandles: 15,
+    'b-eth_usdt': {
+        riskRewardRatio: 1.9,
+        fvgExpiryCandles: 60,
         rangeLookback: 10,
-        minGapSizeRatio: 0.00004,
-        minC2BodyRatio: 0.0011,
+        minGapSizeRatio: 0.00005,
+        minC2BodyRatio: 0.0006,
         rsiPeriod: 17,
-        rsiBullishMin: 19,
-        rsiBullishMax: 75,
-        rsiBearishMin: 23,
-        rsiBearishMax: 72,
-        minRiskPerUnit: 0.5,
-        maxRiskPerUnit: 100,
-        bearishSlBufferRatio: 0.0023,
-        initialBalance: 5
+        rsiBullishMin: 10,
+        rsiBullishMax: 82,
+        rsiBearishMin: 25,
+        rsiBearishMax: 80,
+        minRiskPerUnit: 3,
+        maxRiskPerUnit: 80,
+        bearishSlBufferRatio: 0.0015,
+        initialBalance: 50
     }
+
 };
 
 
@@ -116,18 +71,18 @@ export class FVGStrategy {
         let balance = params.initialBalance || config.initialBalance;
         const rr = params.riskRewardRatio || config.riskRewardRatio;
         const riskAmount = parseFloat(params.riskAmount) || 100;
-        const fvgExpiryCandles = config.fvgExpiryCandles;
-        const minGapSizeRatio = config.minGapSizeRatio;
-        const minC2BodyRatio = config.minC2BodyRatio;
-        const rsiPeriod = config.rsiPeriod;
-        const rsiBullishMin = config.rsiBullishMin;
-        const rsiBullishMax = config.rsiBullishMax;
-        const rsiBearishMin = config.rsiBearishMin;
-        const rsiBearishMax = config.rsiBearishMax;
-        const minRiskPerUnit = config.minRiskPerUnit;
-        const maxRiskPerUnit = config.maxRiskPerUnit;
-        const bearishSlBufferRatio = config.bearishSlBufferRatio;
-        const rangeLookback = config.rangeLookback;
+        const fvgExpiryCandles = params.fvgExpiryCandles || config.fvgExpiryCandles;
+        const minGapSizeRatio = params.minGapSizeRatio || config.minGapSizeRatio;
+        const minC2BodyRatio = params.minC2BodyRatio || config.minC2BodyRatio;
+        const rsiPeriod = params.rsiPeriod || config.rsiPeriod;
+        const rsiBullishMin = params.rsiBullishMin || config.rsiBullishMin;
+        const rsiBullishMax = params.rsiBullishMax || config.rsiBullishMax;
+        const rsiBearishMin = params.rsiBearishMin || config.rsiBearishMin;
+        const rsiBearishMax = params.rsiBearishMax || config.rsiBearishMax;
+        const minRiskPerUnit = params.minRiskPerUnit || config.minRiskPerUnit;
+        const maxRiskPerUnit = params.maxRiskPerUnit || config.maxRiskPerUnit;
+        const bearishSlBufferRatio = params.bearishSlBufferRatio || config.bearishSlBufferRatio;
+        const rangeLookback = params.rangeLookback || config.rangeLookback;
         const simulationStart = params.simulationStartUnix ? params.simulationStartUnix * 1000 : 0;
 
         const cleanPair = (params.pair || DEFAULT_PAIR_KEY).replace('B-', '').toLowerCase();
@@ -160,7 +115,8 @@ export class FVGStrategy {
                     const gapSize = c3.low - c1.high;
                     if (gapSize > (c3.close * minGapSizeRatio) && c2BodyRatio >= minC2BodyRatio) {
                         const currentEma = ema200[i] || 0;
-                        if (currentEma === 0 || c3.close > currentEma) {
+                        // Relaxed EMA logic: Removed strict EMA filter to maximize trade frequency on ETH
+                        if (true) {
                             const fvg = {
                                 top: c3.low,
                                 bottom: c1.high,
@@ -226,7 +182,8 @@ export class FVGStrategy {
                     const gapSize = c1.low - c3.high;
                     if (gapSize > (c3.close * minGapSizeRatio) && c2BodyRatio >= minC2BodyRatio) {
                         const currentEma = ema200[i] || 0;
-                        if (currentEma === 0 || c3.close < currentEma) {
+                        // Relaxed EMA logic: Removed strict EMA filter to maximize trade frequency on ETH
+                        if (true) {
                             const fvg = {
                                 top: c1.low,
                                 bottom: c3.high,
